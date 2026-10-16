@@ -16,4 +16,4 @@ docker run -d --name vampi-secure   -e vulnerable=0 -e tokentimetolive="$TTL" -p
 
 echo "vulnerable VAmPI -> http://127.0.0.1:5002  (red-team target)"
 echo "fixed VAmPI      -> http://127.0.0.1:5001  (reference recovery)"
-echo "DB is in-memory per container; 'docker restart vampi-insecure' resets it."
+echo "reset between runs: scripts/reset-vampi.sh http://127.0.0.1:5002  (GET /createdb)"
