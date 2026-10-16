@@ -31,4 +31,8 @@ export const runs = new Hono<Env>()
   .get("/:id/events", async (c) => {
     const after = Number(c.req.query("after") ?? 0);
     return c.json(await c.var.svc.listEvents(c.req.param("id"), Number.isFinite(after) ? after : 0));
-  });
+  })
+  // Live view of the decision so far; safe to poll.
+  .get("/:id/report", async (c) => c.json(await c.var.svc.report(c.req.param("id"))))
+  // Select the fastest verified candidate and close the run. Needs a verdict for every candidate.
+  .post("/:id/complete", async (c) => c.json(await c.var.svc.complete(c.req.param("id"), source(c))));

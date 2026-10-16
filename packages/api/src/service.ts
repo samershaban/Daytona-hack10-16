@@ -2,8 +2,8 @@
 // backend owns is enforced here, so it holds no matter which Store is behind it.
 import { createHash, randomUUID } from "node:crypto";
 import type {
-  AgentMessage, Approval, ApproveBody, Candidate, CreateCandidateBody, CreateEvidenceBody, CreateFindingBody,
-  CreateMessageBody, CreateVerdictBody, EventSource, Evidence, Finding, Run, RunEvent, RunStatus,
+  AgentMessage, Approval, ApproveBody, Candidate, CandidateAssessment, CreateCandidateBody, CreateEvidenceBody, CreateFindingBody,
+  CreateMessageBody, CreateVerdictBody, EventSource, Evidence, Finding, Report, Run, RunEvent, RunStatus,
   UpdateCandidateBody, Verdict,
 } from "@restorelab/contracts";
 import { ApiError, conflict, notFound, unprocessable } from "./errors.ts";
@@ -314,6 +314,83 @@ export class Service {
   async listVerdicts(runId: string) {
     await this.getRun(runId);
     return this.store.list("verdict", runId);
+  }
+
+  // ---------- selection + report ----------
+
+  /**
+   * Hard gates first, speed second: a candidate is eligible only with a pass verdict, every check
+   * passed, the run's baseline fixture and a measured recoveryMs. Eligible candidates are ordered
+   * by recoveryMs. Agent claims are never read.
+   */
+  protected async assess(run: Run): Promise<CandidateAssessment[]> {
+    const verdicts = new Map((await this.store.list("verdict", run.id)).map((v) => [v.candidateId, v]));
+    const assessed = (await this.store.list("candidate", run.id)).map((candidate): CandidateAssessment => {
+      const verdict = verdicts.get(candidate.id);
+      const reasons: string[] = [];
+      if (!verdict) reasons.push("awaiting verifier verdict");
+      else {
+        if (verdict.decision !== "pass") reasons.push(`verifier decision: ${verdict.decision}`);
+        for (const k of verdict.checks)
+          if (k.passed !== true) reasons.push(`check ${k.name}: ${k.passed === false ? "failed" : "inconclusive"}`);
+        if (verdict.decision === "pass" && verdict.recoveryMs == null) reasons.push("no measured recoveryMs");
+      }
+      if (candidate.baseFixtureId !== run.baseFixtureId) reasons.push("baseline fixture mismatch");
+      return { candidate, verdict, eligible: reasons.length === 0, reasons };
+    });
+    return assessed.sort((a, b) =>
+      Number(b.eligible) - Number(a.eligible) ||
+      (a.verdict?.recoveryMs ?? Infinity) - (b.verdict?.recoveryMs ?? Infinity) ||
+      a.candidate.createdAt.localeCompare(b.candidate.createdAt));
+  }
+
+  async report(runId: string): Promise<Report> {
+    const run = await this.getRun(runId);
+    const [candidates, findings, messages, approvals, evidence] = await Promise.all([
+      this.assess(run),
+      this.store.list("finding", runId),
+      this.store.list("message", runId),
+      this.store.list("approval", runId),
+      this.listEvidence(runId),
+    ]);
+    const winner = candidates.find((a) => a.eligible);
+    const outcome: Report["outcome"] = winner ? "verified"
+      : candidates.length === 0 || candidates.some((a) => !a.verdict) ? "pending" : "no_verified_candidate";
+    return {
+      run, outcome,
+      recommendation: winner && {
+        candidateId: winner.candidate.id, strategy: winner.candidate.strategy,
+        recoveryMs: winner.verdict!.recoveryMs!, patchRef: winner.candidate.patchRef,
+      },
+      candidates, findings, messages,
+      citations: messages.filter((m) => m.findingIds.length)
+        .map((m) => ({ messageId: m.id, from: m.from, type: m.type, findingIds: m.findingIds })),
+      approvals, evidence, generatedAt: now(),
+    };
+  }
+
+  /**
+   * Closes the run once every candidate has a verdict: completed with the fastest verified
+   * candidate selected, unknown if any verdict was inconclusive, otherwise failed.
+   */
+  complete(runId: string, source: EventSource): Promise<Report> {
+    return this.withRunLock(runId, async () => {
+      const run = await this.requireOpen(runId);
+      const assessed = await this.assess(run);
+      if (!assessed.length) throw conflict("no_candidates", `run ${runId} has no candidates`);
+      const pending = assessed.filter((a) => !a.verdict).map((a) => a.candidate.id);
+      if (pending.length) throw conflict("verdicts_pending", `candidates without a verdict: ${pending.join(", ")}`);
+      const winner = assessed.find((a) => a.eligible);
+      if (winner)
+        await this.transition(runId, "completed", source, `selected ${winner.candidate.id} (${winner.verdict!.recoveryMs}ms)`, { selectedCandidateId: winner.candidate.id });
+      else if (assessed.some((a) => a.verdict!.decision === "unknown"))
+        await this.transition(runId, "unknown", source, "no verified candidate; at least one verdict was inconclusive");
+      else
+        await this.transition(runId, "failed", source, "no candidate passed every hard gate");
+      const report = await this.report(runId);
+      await this.event({ runId, type: "run.completed", source, candidateId: winner?.candidate.id, payload: { outcome: report.outcome, recommendation: report.recommendation } });
+      return report;
+    });
   }
 }
 
