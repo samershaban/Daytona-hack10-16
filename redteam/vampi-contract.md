@@ -14,10 +14,27 @@ team-owned/synthetic. Keep `vulnerable=1`; restrict candidate edits to `api_view
 | sha256 of vulnerable `books.py` @ pinned commit | **`78e2eb77d655573f03b7a4d0bca73dc27383b0c5ec7882a5aa8608caa52828e8`** |
 | Reference copy in repo | `infra/fixture/vampi/reference/books.vulnerable.py` |
 
-Baseline **must** be built from this commit, not `:latest`. Verify in any sandbox:
+**Full manifest hashes** (all deterministic from the pin) are in
+`infra/fixture/vampi/baseline.sha256`:
+
+| File | sha256 |
+|---|---|
+| `app.py` | `ad26b12cfbdaab311bea86942f5ebd368dca331a0f4cdba803393739baadf42e` |
+| `config.py` | `42912b0b70d6f47bdb85a7f13f48c3750c16a87fb62d99ef512a8fbafd566b97` |
+| `api_views/books.py` | `78e2eb77d655573f03b7a4d0bca73dc27383b0c5ec7882a5aa8608caa52828e8` |
+| `api_views/users.py` | `46006eb7207ebbae163f5320b13e3bf0ec464cef201a51fb2cd43b5cfdb4116c` |
+| `models/books_model.py` | `b41a7b806416e2938cb4423d7652cd3c8dda7260d47f8edbbfd8078dca74b7af` |
+| `models/user_model.py` | `4ce47b9850812e47140b2d2f2e20c08ae4b5338d168ce72f23e3127986ef6e1b` |
+| `requirements.txt` | `c748738940589a5c431281c8ad983942dec24080450d733c69038121a93e8aca` |
+| `openapi_specs/openapi3.yml` | `35200f354f9c9968182fc19458295ed45bb4c368150348c46d5146a7e40a61c9` |
+| `.pinned_sha` (content = commit + `\n`) | `11d72399af93eb631ad518ec665a29c5c7b12b2d8161fb8db31cd35610c1f218` |
+
+Baseline **must** be built from this commit, not `:latest`. The Dockerfile runs
+`sha256sum -c` against these at build time, so a drifted source fails the build. Verify in any
+sandbox before any candidate edit:
 ```bash
-cat /vampi/.pinned_sha   # must equal the commit above
-shasum -a 256 /vampi/api_views/books.py   # must equal the sha256 above (before any candidate edit)
+cat /vampi/.pinned_sha                        # must equal the commit above
+cd /vampi && sha256sum -c .baseline.sha256    # all files OK
 ```
 
 ## 2. Baseline image
