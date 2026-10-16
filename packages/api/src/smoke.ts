@@ -52,7 +52,8 @@ await call("POST", `${R}/findings`, "redteam", { author: "redteam", category: "O
 await call("POST", `${R}/findings`, "redteam", { author: "redteam", category: "OWASP-API1-2023", observation: "x", evidenceIds: ["ev_missing"], targetScope: "GET /api/records/:id" }, 422);
 const finding = await call("POST", `${R}/findings`, "redteam", {
   author: "redteam", category: "OWASP-API1-2023", evidenceIds: [ev.id], targetScope: "GET /api/records/:id",
-  observation: "alice (tenant-a) received tenant-b record rec-b1 with 200: no object ownership check",
+  // "Authorization:" in prose is not a header and must not trip the credential guard.
+  observation: "Broken Object Level Authorization: alice (tenant-a) received tenant-b record rec-b1 with 200",
 });
 step("finding requires stored evidence and no credentials");
 
