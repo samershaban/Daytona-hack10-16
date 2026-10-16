@@ -13,7 +13,7 @@ import { SurrealStore } from "./store/surreal.ts";
 
 const kind = process.env.STORE ?? "memory";
 const store: Store =
-  kind === "surreal" ? await SurrealStore.open({ url: process.env.SURREAL_URL ?? "ws://127.0.0.1:8000/rpc", username: process.env.SURREAL_USER ?? "root", password: process.env.SURREAL_PASS ?? "root" })
+  kind === "surreal" ? await SurrealStore.fromEnv()
   : kind === "jsonl" ? JsonlStore.open(join(mkdtempSync(join(tmpdir(), "restorelab-")), "api.jsonl"))
   : new MemoryStore();
 const app = createApp(store);

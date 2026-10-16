@@ -8,6 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "start:surreal": "STORE=surreal tsx src/server.ts",
+    "start:env": "node --env-file=../../.env --import tsx src/server.ts",
+    "smoke:env": "node --env-file=../../.env --import tsx src/smoke.ts",
     "smoke": "tsx src/smoke.ts",
     "typecheck": "tsc --noEmit"
   },

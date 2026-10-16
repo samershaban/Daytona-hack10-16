@@ -12,6 +12,11 @@ const TABLE: Record<Kind, string> = {
   verdict: "verdict", approval: "approval", evidence: "evidence",
 };
 
+export type SurrealOptions = {
+  url: string; username: string; password: string;
+  namespace: string; database: string; authLevel: "root" | "namespace" | "database";
+};
+
 /** Record id -> contract `id` (verdicts have none), drops internal fields. */
 function fromRow<T>(row: any, kind?: Kind): T {
   if (!row) return row;
@@ -26,14 +31,49 @@ export class SurrealStore implements Store {
 
   private constructor(private db: Surreal) {}
 
-  static async open(opts: { url: string; username: string; password: string }) {
+  /**
+   * `authLevel` is the level the user is defined on: `root` (local default), or `namespace` /
+   * `database` for a user scoped to one namespace or database (e.g. a Surreal Cloud system user).
+   * Each level creates only what it is allowed to: root the namespace, namespace the database.
+   */
+  static async open(opts: SurrealOptions) {
+    const { url, username, password, namespace, database, authLevel } = opts;
+    for (const name of [namespace, database])
+      if (!/^[A-Za-z0-9_]+$/.test(name)) throw new Error(`invalid SurrealDB namespace/database name: ${name}`);
+    const authentication =
+      authLevel === "root" ? { username, password }
+      : authLevel === "namespace" ? { namespace, username, password }
+      : { namespace, database, username, password };
     // Node < 22 has no global WebSocket; the SDK needs one for ws:// URLs.
     const db = new Surreal(globalThis.WebSocket ? {} : { websocketImpl: NodeWebSocket as unknown as typeof WebSocket });
-    await db.connect(opts.url, { authentication: { username: opts.username, password: opts.password } });
-    // SurrealDB 3 doesn't auto-create namespaces, so the schema (which DEFINEs them) runs before use().
-    await db.query(await readFile(new URL("../../schema.surql", import.meta.url), "utf8")).collect();
-    await db.use({ namespace: "restorelab", database: "api" });
+    await db.connect(url, { authentication });
+    // SurrealDB 3 doesn't auto-create namespaces or databases.
+    if (authLevel === "root") await db.query(`DEFINE NAMESPACE IF NOT EXISTS ${namespace}`).collect();
+    if (authLevel !== "database") {
+      await db.use({ namespace });
+      await db.query(`DEFINE DATABASE IF NOT EXISTS ${database}`).collect();
+    }
+    await db.use({ namespace, database });
+    // schema.surql's own NS/DB preamble is for running it by hand; here the connection's NS/DB is used.
+    const schema = (await readFile(new URL("../../schema.surql", import.meta.url), "utf8"))
+      .split("\n").filter((l) => !/^\s*(DEFINE NAMESPACE|USE NS|DEFINE DATABASE|USE DB)\b/i.test(l)).join("\n");
+    await db.query(schema).collect();
     return new SurrealStore(db);
+  }
+
+  /** Reads SURREAL_* env vars. Defaults match a local `surreal start --user root --pass root`. */
+  static fromEnv() {
+    const authLevel = process.env.SURREAL_AUTH_LEVEL ?? "root";
+    if (authLevel !== "root" && authLevel !== "namespace" && authLevel !== "database")
+      throw new Error(`SURREAL_AUTH_LEVEL=${authLevel} (expected root | namespace | database)`);
+    return SurrealStore.open({
+      url: process.env.SURREAL_URL ?? "ws://127.0.0.1:8000/rpc",
+      username: process.env.SURREAL_USER ?? "root",
+      password: process.env.SURREAL_PASS ?? "root",
+      namespace: process.env.SURREAL_NS ?? "restorelab",
+      database: process.env.SURREAL_DB ?? "api",
+      authLevel,
+    });
   }
 
   private async q<T = any>(sql: string, vars: Record<string, unknown> = {}): Promise<T> {

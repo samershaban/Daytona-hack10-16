@@ -10,7 +10,15 @@ STORE=surreal npm run start -w @restorelab/api    # SurrealDB (start it first: n
 npm run smoke -w @restorelab/api         # end-to-end check; add STORE=jsonl|surreal to test those
 ```
 
-Env: `PORT` (4000), `HOST` (0.0.0.0), `STORE` (`memory` | `jsonl` | `surreal`), `JSONL_PATH`, `SURREAL_URL` (`ws://127.0.0.1:8000/rpc`), `SURREAL_USER`, `SURREAL_PASS`.
+Env: `PORT` (4000), `HOST` (0.0.0.0), `STORE` (`memory` | `jsonl` | `surreal`), `JSONL_PATH`, `SURREAL_URL` (`ws://127.0.0.1:8000/rpc`), `SURREAL_USER` / `SURREAL_PASS` (root/root), `SURREAL_AUTH_LEVEL` (`root` | `namespace` | `database`), `SURREAL_NS` (restorelab), `SURREAL_DB` (api).
+
+### Surreal Cloud
+
+1. In Surrealist, connect to your Cloud instance and create a user for the API, e.g. `DEFINE USER restorelab_api ON ROOT PASSWORD '...' ROLES OWNER;` (or `ON NAMESPACE` / `ON DATABASE` with `USE NS restorelab` / `USE NS restorelab DB api` first, and set `SURREAL_AUTH_LEVEL` to match).
+2. `cp .env.example .env` at the repo root and set `SURREAL_URL=wss://<instance>.surreal.cloud/rpc`, `SURREAL_USER`, `SURREAL_PASS`, `SURREAL_AUTH_LEVEL`. `.env` is git-ignored.
+3. `npm run smoke:env -w @restorelab/api` to check, then `npm run start:env -w @restorelab/api`.
+
+The API creates whatever its user is allowed to (root: namespace + database; namespace user: database) and applies `schema.surql` on connect.
 
 Send `content-type: application/json` and an `x-role` header: `orchestrator`, `redteam`, `agent`, `verifier` or `human`. The role is recorded as the event source and gates approvals and verdicts. It is an honor system, not authentication. Errors are `{ error, message }` with status 400 (bad body), 403 (wrong role), 404, 409 (state conflict) or 422 (rule violated).
 

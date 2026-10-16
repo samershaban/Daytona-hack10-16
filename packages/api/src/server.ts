@@ -11,12 +11,7 @@ async function openStore(): Promise<Store> {
   if (kind === "memory") return new MemoryStore();
   if (kind === "jsonl")
     return JsonlStore.open(process.env.JSONL_PATH ?? fileURLToPath(new URL("../../../.data/api.jsonl", import.meta.url)));
-  if (kind === "surreal")
-    return SurrealStore.open({
-      url: process.env.SURREAL_URL ?? "ws://127.0.0.1:8000/rpc",
-      username: process.env.SURREAL_USER ?? "root",
-      password: process.env.SURREAL_PASS ?? "root",
-    });
+  if (kind === "surreal") return SurrealStore.fromEnv();
   throw new Error(`unknown STORE=${kind} (expected memory | jsonl | surreal)`);
 }
 
