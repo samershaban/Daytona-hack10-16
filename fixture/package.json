@@ -5,6 +5,7 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "redteam": "tsx ../redteam/probe.ts",
+    "redteam:vampi": "tsx ../redteam/vampi.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": { "express": "4.21.2" },
