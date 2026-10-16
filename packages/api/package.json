@@ -7,13 +7,16 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "start:surreal": "STORE=surreal tsx src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
     "@restorelab/contracts": "*",
     "hono": "4.13.13",
+    "surrealdb": "2.1.1",
+    "ws": "8.18.3",
     "zod": "4.6.7"
   },
-  "devDependencies": { "@types/node": "^24", "tsx": "^4", "typescript": "^5" }
+  "devDependencies": { "@types/node": "^24", "@types/ws": "^8", "tsx": "^4", "typescript": "^5" }
 }

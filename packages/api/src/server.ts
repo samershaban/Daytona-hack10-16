@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { JsonlStore } from "./store/jsonl.ts";
 import { MemoryStore } from "./store/memory.ts";
+import { SurrealStore } from "./store/surreal.ts";
 import type { Store } from "./store/store.ts";
 
 async function openStore(): Promise<Store> {
@@ -10,7 +11,13 @@ async function openStore(): Promise<Store> {
   if (kind === "memory") return new MemoryStore();
   if (kind === "jsonl")
     return JsonlStore.open(process.env.JSONL_PATH ?? fileURLToPath(new URL("../../../.data/api.jsonl", import.meta.url)));
-  throw new Error(`unknown STORE=${kind} (expected memory | jsonl)`);
+  if (kind === "surreal")
+    return SurrealStore.open({
+      url: process.env.SURREAL_URL ?? "ws://127.0.0.1:8000/rpc",
+      username: process.env.SURREAL_USER ?? "root",
+      password: process.env.SURREAL_PASS ?? "root",
+    });
+  throw new Error(`unknown STORE=${kind} (expected memory | jsonl | surreal)`);
 }
 
 const store = await openStore();
