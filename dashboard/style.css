@@ -40,7 +40,17 @@ html { color-scheme: light; }
 
 body {
   margin: 0;
-  background: var(--paper);
+  background-color: var(--paper);
+  /* subtle "lab sheet": a soft neutral wash from the top-right + a faint ruled grid,
+     kept very low-alpha so panel text and projector contrast are unaffected */
+  background-image:
+    radial-gradient(1100px 520px at 88% -8%, rgba(43, 58, 103, 0.06), transparent 60%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0) 55%, rgba(26, 28, 30, 0.035)),
+    linear-gradient(to right, rgba(26, 28, 30, 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(26, 28, 30, 0.028) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 28px 28px, 28px 28px;
+  background-attachment: fixed;
+  background-repeat: no-repeat, no-repeat, repeat, repeat;
   color: var(--ink);
   font-family: var(--sans);
   font-size: var(--fs-body);
