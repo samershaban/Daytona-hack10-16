@@ -1,0 +1,6 @@
+{
+  "name": "restorelab",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"]
+}
