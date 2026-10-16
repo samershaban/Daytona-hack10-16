@@ -3,44 +3,76 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RestoreLab Run</title>
+    <title>RestoreLab — recovery proof sheet</title>
+    <meta name="description" content="RestoreLab proof sheet: which candidate fix closed the BOLA and passed every verifier gate." />
   </head>
   <body>
-    <div id="app">
-      <header class="top">
+    <!-- API-unreachable banner, shown only when polling fails -->
+    <div id="api-error" class="api-error" role="alert" hidden></div>
+
+    <div id="app" class="sheet">
+      <header class="masthead">
         <div class="brand">
-          <span class="logo">RestoreLab</span>
-          <span class="scenario">VAmPI · Books BOLA · GET /books/v1/{title} · OWASP API1:2023</span>
+          <span class="wordmark">RestoreLab</span>
+          <span class="tagline">Prove a recovery works.</span>
         </div>
-        <div class="run">
-          <span class="label">Run</span>
-          <code id="run-id"></code>
-        </div>
-        <span id="mode" class="pill"></span><span id="status" class="pill"></span>
-        <div class="actions">
-          <button id="approve" type="button">Approve scope</button>
-          <button id="replay" type="button" class="ghost">▶ Replay</button>
+        <div class="run-meta">
+          <span id="mode" class="mode" data-mode="live"></span>
+          <span class="run-id" id="run-wrap">run <span id="run-id" class="mono"></span></span>
+          <span id="status" class="status-pill"></span>
         </div>
       </header>
 
-      <main class="grid">
-        <section class="panel room">
-          <h2>Agent room</h2>
-          <ol id="feed" class="feed"></ol>
-        </section>
+      <div class="columns">
+        <!-- LEFT RAIL: the case, steps 1–4 -->
+        <aside class="rail">
+          <section class="step" aria-labelledby="h-scope">
+            <h2 id="h-scope"><span class="idx">1</span> Scope</h2>
+            <div id="scope" class="scope"></div>
+          </section>
 
-        <section class="panel lanes">
-          <h2>Candidates <small id="baseline"></small></h2>
-          <div id="lanes" class="lanes-grid"></div>
-        </section>
+          <section class="step" aria-labelledby="h-finding">
+            <h2 id="h-finding"><span class="idx">2</span> Red-team finding</h2>
+            <div id="finding" class="finding"></div>
+          </section>
 
-        <section class="panel gates">
-          <h2>Gate matrix <small>independent verifier</small></h2>
-          <table id="matrix" class="matrix"></table>
-        </section>
+          <section class="step" aria-labelledby="h-room">
+            <h2 id="h-room"><span class="idx">3</span> Agent room <small>claims, not verdicts</small></h2>
+            <ol id="feed" class="feed"></ol>
+          </section>
 
-        <section id="winner" class="banner" aria-live="polite"></section>
-      </main>
+          <section class="step" aria-labelledby="h-cands">
+            <h2 id="h-cands"><span class="idx">4</span> Candidates <small id="baseline"></small></h2>
+            <div id="lanes" class="lanes"></div>
+          </section>
+        </aside>
+
+        <!-- CENTER-RIGHT: the hero verification grid, steps 5–7 -->
+        <main class="verify">
+          <section class="step grid-step" aria-labelledby="h-matrix">
+            <h2 id="h-matrix"><span class="idx">5</span> Verification <small>judged by the independent verifier</small></h2>
+            <table id="matrix" class="matrix"></table>
+            <p class="legend" id="legend"></p>
+            <div id="verdict" class="verdict" aria-live="polite"></div>
+          </section>
+
+          <section class="step" aria-labelledby="h-fix">
+            <h2 id="h-fix"><span class="idx">6</span> Selected fix &amp; sign-off</h2>
+            <div id="selected" class="selected"></div>
+            <div class="controls">
+              <button id="approve" type="button" class="btn primary" disabled>Approve fix (awaiting a verified candidate)</button>
+            </div>
+          </section>
+
+          <section class="step" aria-labelledby="h-replay">
+            <h2 id="h-replay"><span class="idx">7</span> Replay</h2>
+            <div class="controls">
+              <button id="replay" type="button" class="btn">Replay run</button>
+              <span class="hint" id="replay-hint"></span>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>
