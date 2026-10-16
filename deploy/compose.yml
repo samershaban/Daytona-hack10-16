@@ -9,7 +9,7 @@ services:
       HOST: 0.0.0.0
       PORT: 4000
     volumes:
-      - ${RESTORELAB_DATA_DIR:?Set absolute path to the existing durable API data directory}:/app/.data
+      - ${RESTORELAB_DATA_DIR:?Set absolute path to the existing durable API data directory}:/data
     networks: [restorelab]
     restart: unless-stopped
 
