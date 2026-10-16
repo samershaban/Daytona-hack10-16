@@ -1,38 +1,53 @@
-# Acceptance contract: BOLA fix
+# Acceptance contract: BOLA fix (VAmPI)
 
-This is the independent definition of what counts as a successful fix for the broken object-level authorization flaw on RecordShop's `GET /api/records/:id` (OWASP API1:2023, WSTG-ATHZ-04, ASVS 5.0 V8.2.2). It lives in [`contract.ts`](./contract.ts) and mirrors the hard-contract table in [`fixture/README.md`](../../fixture/README.md).
+This is the independent definition of a successful fix for the broken object-level
+authorization flaw on VAmPI's `GET /books/v1/{title}` (OWASP API1:2023,
+WSTG-ATHZ-04). It lives in [`contract.ts`](./contract.ts). Only that books-route
+BOLA is in scope; every other VAmPI weakness is out of scope here.
 
-The checks are written from the fixture's known identities and records, not from anything a recovery agent says or produces. An agent cannot mark its own fix as passing; only these checks, run against the candidate's running service, can.
+The checks are written from the fixture's known identities and books, not from
+anything a recovery agent says. An agent cannot mark its own fix as passing; only
+these checks, run against the candidate's running service, can.
 
-## The checks (in order)
+## The checks (all required)
 
-| # | Check | Gate | Passes when | Catches |
-|---|---|---|---|---|
-| 1 | `exploit-closed` | required | alice (tenant-a) GET `rec-2001` → **404** | A fix that doesn't address the red-team finding |
-| 2 | `foreign-tenant-denied` | required | bob (tenant-b) GET `rec-1001` → **404** | A fix that only blocks the one direction in the reproduction |
-| 3 | `own-tenant-allowed` | required | alice GET her own `rec-1001` → 200, `body.record` is `rec-1001` in `tenant-a` | A fix that is too strict and blocks legitimate users |
-| 4 | `bob-own-allowed` | required | bob GET his own `rec-2001` → 200 | Same, in the other tenant |
-| 5 | `admin-preserved` | required | admin-a GET `rec-1001` (own tenant, another user's record) → 200 | A fix that is too strict and breaks the tenant-admin policy |
-| 6 | `admin-not-godmode` | optional | admin-a GET `rec-2001` (other tenant) → 404 | A fix that lets admins bypass tenant isolation |
-| 7 | `data-unchanged` | required | `GET /internal/integrity` → `intact: true`, `recordCount: 4` | "Fixing" access by deleting or adding records |
-| 8 | `service-healthy` | required | `GET /health` → 200 | A patch that leaves the service broken |
+| # | Check | Passes when | Catches |
+|---|---|---|---|
+| 1 | `exploit-closed` | userB requesting userA's book title → **404**, and the body does **not** contain userA's secret | A fix that doesn't actually close the cross-user read |
+| 2 | `owner-read-preserved` | userA reads their own book → 200 and the secret equals the expected value | An over-restrictive fix that blocks the real owner |
+| 3 | `b-own-book` | userB creates a book and reads it back (POST then GET) → 200 | An over-restrictive fix that breaks access to a user's own new book |
+| 4 | `missing-book-404` | authenticated GET of a nonexistent title → 404 | A fix that turns "not found" into an error or a bypass |
+| 5 | `unauth-401` | GET userA's book with no `Authorization` header → 401 | A fix that leaves the route readable without auth |
+| 6 | `data-preserved` | userA's and userB's known books still return their baseline secrets | "Closing" access by deleting or rewriting seed data |
+| 7 | `service-healthy` | a basic liveness GET returns a non-5xx status | A patch that leaves the service crashing |
 
-Denials must be **404**, so the API doesn't reveal whether a record exists.
+## Fresh auth, never a cached token
 
-## Over-restrictive fixes MUST fail
-
-Blocking every request would pass checks 1 and 2. That is not a fix. **A candidate that breaks own-tenant reads (checks 3–4) or tenant-admin access (check 5) MUST fail**, even if it closes the exploit and even if the agent reports it as fixed.
+The runner logs in userA and userB at the start of **every** run and uses only
+those fresh tokens. A cached or expired token (401) must never be read as a
+working fix, so a login failure makes the dependent checks UNKNOWN — never pass.
 
 ## Verdict rules
 
-Each check returns `passed: true`, `false`, or `null` (it could not run: service unreachable, malformed integrity response, etc.), plus an `evidenceId` pointing at the captured request and response. The decision considers **required** checks only:
+Each check returns `passed: true`, `false`, or `null` (it could not run: login
+failed, service unreachable, bad response), plus an `evidenceId`. The decision
+considers the required checks (all of them here):
 
 - **pass**: every required check ran and passed.
 - **fail**: at least one required check failed. A failure outranks unknowns.
-- **unknown**: nothing failed, but at least one required check could not run or is missing.
+- **unknown**: nothing failed, but at least one required check could not run.
 
-`admin-not-godmode` is reported but never changes the decision, because it isn't in the fixture's hard-contract table. Only `pass` candidates are ranked; if none pass, there is no winner.
+Any setup failure, login failure, service error, or missing evidence yields
+FAIL or UNKNOWN — never pass.
 
-## Runner
+## Secrets never land in evidence
 
-[`verifier/`](../../verifier) executes this contract. It only sends GET requests, never calls `/internal/reset` (a reset would hide the data mutations check 7 is there to catch), and refuses any target not in `ALLOWED_TARGETS`.
+Secrets, passwords and live tokens are stripped from every stored response body.
+`exploit-closed` checks the raw body for the secret (to prove it did not leak)
+and then stores the redacted body.
+
+## Runner and scope
+
+[`verifier/`](../../verifier) executes this contract. It talks only to targets in
+`ALLOWED_TARGETS` and hard-refuses the `vulnerable=0` reference oracle on `:5001`
+(see [`verifier/candidates/README.md`](../../verifier/candidates/README.md)).

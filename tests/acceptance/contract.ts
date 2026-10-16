@@ -1,18 +1,20 @@
 /**
- * Independent acceptance contract for the BOLA fix (OWASP API1:2023,
- * WSTG-ATHZ-04, ASVS 5.0 V8.2.2) on RecordShop's GET /api/records/:id.
+ * Independent acceptance contract for the BOLA fix on VAmPI (erev0s/VAmPI),
+ * the in-scope route GET /books/v1/{title} (OWASP API1:2023, WSTG-ATHZ-04).
  *
- * Mirrors the hard-contract table in fixture/README.md. Checks are plain data
- * (who requests what, and what must come back), written from the fixture's
- * ground truth, never from agent output. A runner executes them over HTTP
- * against each candidate's base URL.
+ * Checks are plain data (who requests what, and what must come back), written
+ * from the fixture's ground truth, never from agent output. A runner executes
+ * them over HTTP against each candidate's base URL after logging in fresh.
+ *
+ * Only the BOLA on the books route is in scope. Every other VAmPI weakness is
+ * out of scope for this contract.
  */
 
 // ---- Shared verdict types (mirror shared/contracts once Samer publishes it) ----
 
 export type CheckResult = {
   name: CheckName;
-  /** true = passed, false = failed, null = could not run (unreachable, bad response shape, ...). */
+  /** true = passed, false = failed, null = could not run (login/setup failed, unreachable, ...). */
   passed: boolean | null;
   evidenceId: string;
 };
@@ -29,30 +31,42 @@ export type Verdict = {
 
 // ---- Check definitions ----
 
-/** Synthetic RecordShop identities (tokens live in verifier config, not here). */
-export type IdentityName = "alice" | "bob" | "adminA";
+/** The two synthetic VAmPI accounts. Credentials live in verifier config, not here. */
+export type IdentityName = "userA" | "userB";
+
+/** Which book a probe targets: a user's own book, or a title that should not exist. */
+export type BookRef = "userA" | "userB" | "missing";
 
 export type CheckName =
   | "exploit-closed"
-  | "foreign-tenant-denied"
-  | "own-tenant-allowed"
-  | "bob-own-allowed"
-  | "admin-preserved"
-  | "admin-not-godmode"
-  | "data-unchanged"
+  | "owner-read-preserved"
+  | "b-own-book"
+  | "missing-book-404"
+  | "unauth-401"
+  | "data-preserved"
   | "service-healthy";
 
 export type Probe =
-  | { kind: "read-record"; as: IdentityName; recordId: string }
-  | { kind: "integrity" }
+  /** GET /books/v1/{title}. `as` omitted = no Authorization header. */
+  | { kind: "read-book"; as?: IdentityName; title: BookRef }
+  /** POST /books/v1 as `as`, then GET the new book back. */
+  | { kind: "create-then-read"; as: IdentityName }
+  /** Read A's and B's own books and compare each secret to its baseline. */
+  | { kind: "known-books-intact" }
+  /** A basic liveness GET. */
   | { kind: "health" };
 
 export type Expectation =
+  /** Exact HTTP status. */
   | { kind: "status"; status: number }
-  /** Status plus the returned { record } must belong to this record id and tenant. */
-  | { kind: "status-and-record"; status: number; recordId: string; tenantId: string }
-  /** /internal/integrity must report intact === true and this exact record count. */
-  | { kind: "integrity"; recordCount: number };
+  /** Any non-5xx status (liveness). */
+  | { kind: "non-5xx" }
+  /** 200 AND the response's secret equals this identity's expected secret. */
+  | { kind: "secret-matches"; who: IdentityName }
+  /** This status AND the response body does NOT contain the named identity's secret. */
+  | { kind: "denied-without-secret"; status: number; secretOf: IdentityName }
+  /** Both A's and B's own-book secrets are unchanged from baseline. */
+  | { kind: "all-secrets-match" };
 
 export type Check = {
   name: CheckName;
@@ -65,75 +79,63 @@ export type Check = {
   expect: Expectation;
 };
 
-/** RecordShop denies with 404 so it doesn't leak whether a record exists. */
-export const DENIED = 404;
-export const CANONICAL_RECORD_COUNT = 4;
-
-/** Ordered: security first, then functionality, then integrity and health. */
+/** Ordered: the exploit first, then functionality, then integrity and health. */
 export const CHECKS: readonly Check[] = [
   {
     name: "exploit-closed",
-    description: "Replaying the red-team reproduction: alice (tenant-a) GET rec-2001 (tenant-b) → 404.",
-    guardsAgainst: "A fix that does not address the reported finding.",
+    description: "userB requests userA's book title → 404, and the response does not contain userA's secret.",
+    guardsAgainst: "A fix that does not actually close the cross-user book read (the reported BOLA).",
     required: true,
-    probe: { kind: "read-record", as: "alice", recordId: "rec-2001" },
-    expect: { kind: "status", status: DENIED },
+    probe: { kind: "read-book", as: "userB", title: "userA" },
+    expect: { kind: "denied-without-secret", status: 404, secretOf: "userA" },
   },
   {
-    name: "foreign-tenant-denied",
-    description: "The other direction: bob (tenant-b) GET rec-1001 (tenant-a) → 404.",
-    guardsAgainst: "A fix that only blocks the one direction or record id used in the reproduction.",
+    name: "owner-read-preserved",
+    description: "userA reads their own book → 200 and the returned secret equals userA's expected secret.",
+    guardsAgainst: "An over-restrictive fix that blocks or corrupts a legitimate owner read.",
     required: true,
-    probe: { kind: "read-record", as: "bob", recordId: "rec-1001" },
-    expect: { kind: "status", status: DENIED },
+    probe: { kind: "read-book", as: "userA", title: "userA" },
+    expect: { kind: "secret-matches", who: "userA" },
   },
   {
-    name: "own-tenant-allowed",
-    description: "alice GET her own rec-1001 → 200 with a tenant-a record.",
-    guardsAgainst: "An over-restrictive fix that blocks legitimate users.",
+    name: "b-own-book",
+    description: "userB creates a book and reads it back (POST then GET) → 200.",
+    guardsAgainst: "An over-restrictive fix that breaks a user's access to their own new book.",
     required: true,
-    probe: { kind: "read-record", as: "alice", recordId: "rec-1001" },
-    expect: { kind: "status-and-record", status: 200, recordId: "rec-1001", tenantId: "tenant-a" },
-  },
-  {
-    name: "bob-own-allowed",
-    description: "bob GET his own rec-2001 → 200.",
-    guardsAgainst: "An over-restrictive fix that blocks legitimate users in the other tenant.",
-    required: true,
-    probe: { kind: "read-record", as: "bob", recordId: "rec-2001" },
+    probe: { kind: "create-then-read", as: "userB" },
     expect: { kind: "status", status: 200 },
   },
   {
-    name: "admin-preserved",
-    description: "admin-a GET rec-1001 (own tenant, another user's record) → 200.",
-    guardsAgainst: "An over-restrictive fix that breaks the tenant-admin policy.",
+    name: "missing-book-404",
+    description: "An authenticated GET for a nonexistent title → 404.",
+    guardsAgainst: "A fix that turns 'not found' into an error or an authorization bypass.",
     required: true,
-    probe: { kind: "read-record", as: "adminA", recordId: "rec-1001" },
-    expect: { kind: "status", status: 200 },
+    probe: { kind: "read-book", as: "userA", title: "missing" },
+    expect: { kind: "status", status: 404 },
   },
   {
-    name: "admin-not-godmode",
-    description: "admin-a GET rec-2001 (tenant-b) → 404: admin cannot cross tenants.",
-    guardsAgainst: "A fix that lets any admin bypass tenant isolation.",
-    required: false,
-    probe: { kind: "read-record", as: "adminA", recordId: "rec-2001" },
-    expect: { kind: "status", status: DENIED },
+    name: "unauth-401",
+    description: "GET userA's book with no Authorization header → 401.",
+    guardsAgainst: "A fix that leaves the route readable without authentication.",
+    required: true,
+    probe: { kind: "read-book", title: "userA" },
+    expect: { kind: "status", status: 401 },
   },
   {
-    name: "data-unchanged",
-    description: `GET /internal/integrity → intact === true and recordCount === ${CANONICAL_RECORD_COUNT}.`,
-    guardsAgainst: "A fix that 'closes' access by deleting or adding records.",
+    name: "data-preserved",
+    description: "userA's and userB's known books still return their baseline secrets.",
+    guardsAgainst: "A fix that 'closes' access by deleting or rewriting seed data.",
     required: true,
-    probe: { kind: "integrity" },
-    expect: { kind: "integrity", recordCount: CANONICAL_RECORD_COUNT },
+    probe: { kind: "known-books-intact" },
+    expect: { kind: "all-secrets-match" },
   },
   {
     name: "service-healthy",
-    description: "GET /health → 200.",
-    guardsAgainst: "A patch that leaves the service broken or not running.",
+    description: "A basic liveness GET returns a non-5xx status.",
+    guardsAgainst: "A patch that leaves the service crashing or not running.",
     required: true,
     probe: { kind: "health" },
-    expect: { kind: "status", status: 200 },
+    expect: { kind: "non-5xx" },
   },
 ];
 

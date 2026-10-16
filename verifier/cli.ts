@@ -1,15 +1,16 @@
 /**
- * Usage: npm run verify -- --url http://127.0.0.1:3001 [--candidate A] [--run <runId>] [--no-trace]
- * Targets must be in ALLOWED_TARGETS (comma-separated; defaults to localhost:3000-3002).
- * Exit code: 0 pass, 1 fail, 2 unknown, 3 refused (out of scope), 64 bad usage.
+ * Usage: npm run verify -- --url http://127.0.0.1:5000 [--candidate A] [--run <runId>] [--no-trace]
+ * Targets must be in ALLOWED_TARGETS (comma-separated; defaults to localhost:5000/5002).
+ * The reference instance (:5001, vulnerable=0 oracle) is always refused.
+ * Exit code: 0 pass, 1 fail, 2 unknown, 3 refused (out of scope), 4 refused (reference oracle), 64 bad usage.
  */
 import { initTracing, shutdownTracing } from "@restorelab/evals";
 import { config as loadEnv } from "dotenv";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { RECORDSHOP_CONFIG } from "./identities.js";
+import { VAMPI_CONFIG } from "./identities.js";
 import { runVerifier } from "./runVerifier.js";
-import { assertInScope, OutOfScopeError } from "./scope.js";
+import { assertInScope, OutOfScopeError, ReferenceTargetError } from "./scope.js";
 
 loadEnv({ path: fileURLToPath(new URL("../.env", import.meta.url)), quiet: true });
 
@@ -31,6 +32,10 @@ if (!values.url) {
 try {
   assertInScope(values.url);
 } catch (err) {
+  if (err instanceof ReferenceTargetError) {
+    console.error(err.message);
+    process.exit(4);
+  }
   if (err instanceof OutOfScopeError) {
     console.error(err.message);
     process.exit(3);
@@ -42,7 +47,7 @@ const tracing = !values["no-trace"] && Boolean(process.env.ARIZE_SPACE_ID && pro
 if (tracing) initTracing({ serviceName: "verifier" });
 else console.warn("Arize tracing off (--no-trace or ARIZE_* env vars missing).\n");
 
-const result = await runVerifier(values.url, RECORDSHOP_CONFIG, { candidateId: values.candidate, runId: values.run });
+const result = await runVerifier(values.url, VAMPI_CONFIG, { candidateId: values.candidate, runId: values.run });
 if (tracing) await shutdownTracing();
 
 const { verdict, evidence } = result;

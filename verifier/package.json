@@ -9,9 +9,6 @@
   },
   "scripts": {
     "verify": "tsx cli.ts",
-    "candidate:vulnerable": "tsx candidates/vulnerable-server.ts",
-    "candidate:fixed": "tsx candidates/fixed-server.ts",
-    "candidate:over-restrictive": "tsx candidates/over-restrictive-server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
