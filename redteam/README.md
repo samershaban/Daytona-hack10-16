@@ -12,9 +12,13 @@ built-in `vulnerable=0` reference build.
 
 ```bash
 scripts/vampi-up.sh                                  # docker: :5002 vulnerable=1, :5001 vulnerable=0 (reference fix)
+scripts/seed-vampi.sh http://127.0.0.1:5002          # deterministic reset + seed (createdb + canonical book)
 TARGET_URL=http://127.0.0.1:5002 npm run redteam:vampi -w @restorelab/fixture   # prove BOLA
-scripts/reset-vampi.sh http://127.0.0.1:5002         # deterministic reset (GET /createdb)
 ```
+
+**Full pinned execution contract (for Belal): [`vampi-contract.md`](./vampi-contract.md)** —
+pinned commit, baseline image/hash, source workspace, startup/readiness, reset/seed,
+synthetic identities, and the cross-user evidence shape.
 
 **Auth:** `Authorization: Bearer <auth_token>` from `POST /users/v1/login`.
 
