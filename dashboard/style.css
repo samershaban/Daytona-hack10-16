@@ -140,12 +140,11 @@ h2 small { font-size: var(--fs-meta); font-weight: 400; color: var(--ink-2); }
   margin-top: var(--s5);
   align-items: start;
 }
-.rail { display: flex; flex-direction: column; gap: var(--s5); min-width: 0; }
-.verify { display: flex; flex-direction: column; gap: var(--s5); min-width: 0; }
+.rail { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
+.verify { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
 
-.step { min-width: 0; }
-.rail .step { padding-bottom: var(--s5); border-bottom: 1px solid var(--rule); }
-.rail .step:last-child { border-bottom: 0; padding-bottom: 0; }
+/* each step is a self-contained module (border, not shadow) so content stays put */
+.step { min-width: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-md); padding: var(--s4); }
 
 /* ---- scope ---- */
 .scope { font-size: var(--fs-body); }
@@ -226,7 +225,8 @@ h2 small { font-size: var(--fs-meta); font-weight: 400; color: var(--ink-2); }
 .lane .outcome { margin-top: var(--s2); font-size: var(--fs-meta); display: flex; align-items: center; gap: 6px; }
 
 /* ---- the hero: gate matrix ---- */
-.grid-step { background: var(--panel); border: 1px solid var(--rule-strong); border-radius: var(--r-md); padding: var(--s5); }
+/* the hero module is stronger and roomier than the supporting ones */
+.grid-step { border-color: var(--rule-strong); border-width: 2px; padding: var(--s5); }
 .matrix { width: 100%; border-collapse: collapse; }
 .matrix th, .matrix td { text-align: left; padding: var(--s3); border-bottom: 1px solid var(--rule); }
 .matrix thead th { font-size: var(--fs-meta); color: var(--ink-2); font-weight: 600; vertical-align: bottom; border-bottom: 2px solid var(--ink); }
