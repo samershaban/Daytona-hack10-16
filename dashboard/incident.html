@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RestoreLab Incident Command</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="top">
+        <div class="brand">
+          <span class="dot-live"></span>
+          <div class="brand-text">
+            <span class="logo">RestoreLab</span>
+            <span class="scenario">Incident Command Center</span>
+          </div>
+        </div>
+        <div class="idblock">
+          <span class="label">Incident</span>
+          <code id="run-id"></code>
+        </div>
+        <span class="sev">SEV-2</span>
+        <span id="status" class="pill"></span>
+        <div class="actions">
+          <button id="approve" type="button">Authorize containment</button>
+          <button id="replay" type="button" class="ghost">▶ Replay incident</button>
+        </div>
+      </header>
+
+      <section id="incident" class="incident"></section>
+
+      <main class="ops">
+        <section class="panel channel">
+          <h2>Incident channel</h2>
+          <ol id="feed" class="feed"></ol>
+        </section>
+
+        <section class="panel tracks">
+          <h2>Response tracks <small>isolated Daytona sandboxes</small></h2>
+          <div id="tracks" class="tracks-grid"></div>
+        </section>
+
+        <section class="panel matrix">
+          <h2>Validation gates <small>independent verifier</small></h2>
+          <table id="gates" class="gates"></table>
+        </section>
+      </main>
+
+      <section id="resolution" class="resolution" aria-live="polite"></section>
+    </div>
+    <script type="module" src="./incident.ts"></script>
+  </body>
+</html>
