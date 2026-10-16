@@ -1,0 +1,16 @@
+{
+  "name": "@restorelab/db",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts", "./types": "./src/types.ts" },
+  "scripts": {
+    "start": "mkdir -p ../../.data && surreal start --user root --pass root rocksdb:../../.data/surreal.db",
+    "schema": "surreal sql -e http://127.0.0.1:8000 -u root -p root --hide-welcome < schema.surql",
+    "smoke": "tsx src/smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "surrealdb": "2.1.1" },
+  "devDependencies": { "@types/node": "^24", "tsx": "^4", "typescript": "^5" }
+}

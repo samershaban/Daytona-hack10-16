@@ -2,17 +2,5 @@
   "name": "restorelab",
   "private": true,
   "type": "module",
-  "scripts": {
-    "db:start": "surreal start --user root --pass root rocksdb:.data/surreal.db",
-    "db:schema": "surreal sql -e http://127.0.0.1:8000 -u root -p root --hide-welcome < db/schema.surql",
-    "db:smoke": "tsx src/db.smoke.ts"
-  },
-  "dependencies": {
-    "surrealdb": "^2.1.1"
-  },
-  "devDependencies": {
-    "@types/node": "^26.6.5",
-    "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
-  }
+  "workspaces": ["packages/*", "apps/*"]
 }
