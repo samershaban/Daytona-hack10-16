@@ -122,7 +122,19 @@ Auth: `Authorization: Bearer <auth_token>` from `POST /users/v1/login`.
 ## 7. Cross-user evidence (red-team proof)
 
 ```bash
+# standalone (red-team smoke test): self-creates a run + approves scope
 TARGET_URL=http://127.0.0.1:<port> npm run redteam:vampi -w @restorelab/fixture
+
+# post to the live API — smoke test (BOOTSTRAP self-creates the run):
+API_URL=http://54.172.170.158:4000 BOOTSTRAP=1 \
+  TARGET_URL=http://127.0.0.1:<port> REDTEAM_AUTHOR=mahmoud-redteam \
+  npm run redteam:vampi -w @restorelab/fixture
+
+# orchestrated demo: the orchestrator creates the run and a human approves scope,
+# then post into THAT run (no BOOTSTRAP):
+API_URL=http://54.172.170.158:4000 RUN_ID=<run id> \
+  TARGET_URL=http://127.0.0.1:<port> REDTEAM_AUTHOR=mahmoud-redteam \
+  npm run redteam:vampi -w @restorelab/fixture
 ```
 `redteam/vampi.ts` emits the shared `Finding` JSON. Expected shape on the vulnerable baseline:
 
