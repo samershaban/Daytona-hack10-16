@@ -2,5 +2,5 @@
   "name": "restorelab",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"]
+  "workspaces": ["packages/*", "apps/*", "fixture"]
 }
