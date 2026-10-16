@@ -58,21 +58,31 @@ After a candidate edits `books.py`, restart the process (`docker restart <cand>`
 
 ## 5. Deterministic reset / seed (SQLite)
 
-`GET /createdb` runs `drop_all() + create_all() + init_db_users()` — 3 users, **0 books**. The
-scenario needs a seeded book, so the full procedure is `scripts/seed-vampi.sh`:
+`GET /createdb` runs `drop_all() + create_all() + init_db_users()`. **Correction (verified in
+source):** `init_db_users()` registers name1/name2/admin, and `register_user()` gives **each a
+random auto-book** `bookTitle<0-99>` with secret `secret for bookTitle<n>`. So `/createdb`
+produces **3 users + 3 random-titled books**, not zero. `randrange(100)` can collide on the
+UNIQUE `book_title` and **500 the call**, and there is **no delete-book endpoint** to remove
+them. They are per-run noise, excluded from the baseline hash and ignored by the scenario.
+
+`scripts/seed-vampi.sh`: (1) retries `/createdb` until all 3 users exist (past the rare
+collision); (2) logs in as `name1`; (3) creates the canonical book; (4) verifies.
 
 ```bash
 scripts/seed-vampi.sh http://127.0.0.1:<port>
 ```
-It: (1) `GET /createdb`; (2) logs in as `name1`; (3) creates the canonical book; (4) verifies.
-Use this between every run. **Not** container-restart-alone (the SQLite file persists in the
-layer) and **not** `:latest`.
 
-**Baseline-equality gate** — run against each candidate right after seeding; hashes must match:
+**Reset model for identical candidate baselines (recommended):** run `seed-vampi.sh` **once**,
+then **snapshot** the instance; every candidate **forks the snapshot**, so the random auto-books
+are frozen and identical across candidates. Do **not** re-run `/createdb` per candidate (it
+re-rolls the random books). Container-restart-alone and `:latest` are both insufficient.
+
+**Baseline-equality gate** — hashes the KNOWN state (users + canonical book + vuln flag),
+excluding the random auto-books; run against each fork, they must match:
 ```bash
-scripts/vampi-baseline-hash.sh http://127.0.0.1:<port>   # sha256 of normalized API state
+scripts/vampi-baseline-hash.sh http://127.0.0.1:<port>
 ```
-> Expected seeded-state hash: `__FILL_ON_FIRST_RUN__` (deterministic; capture once, reuse to assert equal baselines)
+> Expected seeded-state hash: `__FILL_ON_FIRST_RUN__` (deterministic over the known state)
 
 ## 6. Synthetic identities & canonical object
 
@@ -84,9 +94,13 @@ From VAmPI's `init_db_users()` at the pinned commit (passwords are fixed seed va
 | Attacker | `name2` | `pass2` | foreign user, no rights to the book |
 | Admin | `admin` | `pass1` | not used by this scenario |
 
-Canonical object (seeded by `seed-vampi.sh`): `book_title = restorelab-bola-book`,
-`secret = S3CR3T-name1-canonical`, owner `name1`. Auth: `Authorization: Bearer <auth_token>`
-from `POST /users/v1/login`.
+**Expected-book list after seed:**
+- **Authoritative (the scenario's object):** `restorelab-bola-book`, secret `S3CR3T-name1-canonical`, owner `name1`.
+- **Ignored noise:** one random `bookTitle<0-99>` per seeded user (name1, name2, admin) from
+  `init_db_users()`. Titles are random per `/createdb` but frozen once snapshotted. Record the
+  3 actual titles when you build the snapshot (open item below); the verifier must not depend on them.
+
+Auth: `Authorization: Bearer <auth_token>` from `POST /users/v1/login`.
 
 ## 7. Cross-user evidence (red-team proof)
 
@@ -124,5 +138,6 @@ TARGET_URL=http://127.0.0.1:<port> npm run redteam:vampi -w @restorelab/fixture
 ## Open items Belal fills on first build (deterministic from the above)
 - [ ] Baseline image id (§2)
 - [ ] Seeded-state baseline hash (§5)
+- [ ] The 3 actual `bookTitle<n>` auto-book titles, frozen at snapshot time (§6, informational)
 - [ ] Captured red-team evidence JSON (§7)
-- [ ] Prepared Daytona snapshot id from the pinned image (Belal's `runtime/daytona/`)
+- [ ] Prepared Daytona snapshot id, taken AFTER `seed-vampi.sh` (§5 reset model)
