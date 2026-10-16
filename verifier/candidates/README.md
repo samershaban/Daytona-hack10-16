@@ -1,66 +1,32 @@
-# Local proof targets (VAmPI)
+# Independent VAmPI candidate verification
 
-VAmPI (erev0s/VAmPI) is a Python/Flask app, so candidates run as containers, not
-Node servers. Each candidate is a VAmPI instance on an **allowed** port (`:5000`);
-the **reference** oracle lives on `:5001` and the verifier refuses to test it.
+Verify only real source-patched candidates forked from the same immutable,
+seeded `vulnerable=1` snapshot. The approved patch scope is
+`api_views/books.py`; changing the global flag to `vulnerable=0` is not a
+candidate. The pinned VAmPI source and canonical seed process are documented
+in [the target contract](../../redteam/vampi-contract.md).
 
-> Confirm the exact image tag and the name of the `vulnerable` flag with Belal/Mahmoud
-> (they own the fixture). The commands below use the documented `vulnerable` env var.
-> After starting any instance, call `GET /createdb` once to seed users and books —
-> logins fail until you do.
+The verifier logs in to `name1` and `name2` with the synthetic seed identities
+in [identities.ts](../identities.ts). It checks the canonical books plus a new
+book it creates for `name2`. Do not run against an unseeded container or reseed
+one candidate after it has been forked.
 
-Set the real seed credentials/books/secrets in [`../identities.ts`](../identities.ts)
-(replace the `MOCK_*` values) before expecting meaningful results.
-
-## (a) Vulnerable candidate — expect FAIL on `exploit-closed`
-
-The unpatched BOLA: userB can read userA's book (and its secret) by title.
+Set `ALLOWED_TARGETS` to the actual candidate origins. The `:5001`
+`vulnerable=0` comparator is always refused, even if listed as allowed.
 
 ```bash
-docker run --rm -p 5000:5000 -e vulnerable=1 erev0s/vampi:latest
-curl -s http://127.0.0.1:5000/createdb        # seed users + books (once)
-
-npm run verify -- --url http://127.0.0.1:5000 --candidate vuln
-# DECISION: FAIL   (exploit-closed fails: userB gets 200 + userA's secret)
+cd verifier
+ALLOWED_TARGETS=http://127.0.0.1:5000 npm run verify -- \
+  --url http://127.0.0.1:5000 --candidate CANDIDATE_ID --run RUN_ID \
+  --api http://127.0.0.1:4000 --no-trace
 ```
 
-## (b) Reference behavior as the correct oracle — expect PASS
+`--api` posts the verifier's actual test evidence first and then its immutable
+verdict to the shared API. If publication fails partway through, inspect the
+run's evidence and verdict endpoints before retrying; the API refuses duplicate
+verdicts. Omitting `--api` prints a local verdict only. The CLI must be able to
+reach the candidate before Belal's retention deadline. The backend's report
+selects among candidates only after it receives independent verdicts.
 
-Run a `vulnerable=0` instance **on an allowed candidate port** (`:5000`), not on
-`:5001`. This uses the reference's correct behavior as a stand-in for a correctly
-patched candidate, which is what a good fix must match.
-
-```bash
-docker run --rm -p 5000:5000 -e vulnerable=0 erev0s/vampi:latest
-curl -s http://127.0.0.1:5000/createdb
-
-npm run verify -- --url http://127.0.0.1:5000 --candidate oracle
-# DECISION: PASS   (cross-user read denied, owner reads preserved, data intact)
-```
-
-## Scope guard — the reference instance is always refused
-
-The designated comparator runs on `:5001`. The verifier refuses it so a
-known-good instance can never be mistaken for a verified candidate.
-
-```bash
-docker run --rm -p 5001:5000 -e vulnerable=0 erev0s/vampi:latest   # the oracle
-
-npm run verify -- --url http://127.0.0.1:5001 --candidate oracle
-# refusing: ... is on the reference port :5001 (the vulnerable=0 oracle). ...
-# exit code 4   (hard error — the run does not proceed)
-```
-
-The guard keys off the port, so `:5001` is refused even if it is added to
-`ALLOWED_TARGETS`. A target that is neither allowed nor the reference exits 3.
-
-## Running two candidates at once
-
-Put the second candidate on `:5002` (also allowed) and verify each by URL:
-
-```bash
-docker run --rm -p 5000:5000 -e vulnerable=1 erev0s/vampi:latest   # candidate A
-docker run --rm -p 5002:5000 -e vulnerable=1 erev0s/vampi:latest   # candidate B (patched in code)
-npm run verify -- --url http://127.0.0.1:5000 --candidate A
-npm run verify -- --url http://127.0.0.1:5002 --candidate B
-```
+The scope guard returns exit code 4 for the `:5001` comparator and 3 for
+other disallowed origins. A pass exits 0, fail 1 and unknown 2.

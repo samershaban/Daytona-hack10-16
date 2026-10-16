@@ -32,20 +32,19 @@ synthetic identities, and the cross-user evidence shape.
 | service healthy (`GET /`) | 200 | 200 |
 
 **Handoff to Belal (Daytona):**
-- Baseline image: `erev0s/vampi:latest` with `vulnerable=1` (the broken baseline all candidates fork from).
+- Baseline: pinned VAmPI source with `vulnerable=1`, the two canonical books and an immutable image/snapshot digest. Never use `:latest` as the candidate baseline.
 - To let recovery agents produce a *real* code patch (not just flip a flag), clone the VAmPI
   repo into the sandbox and build from source; the BOLA fix is the ownership filter in
   `api_views/books.py` (`Book.query.filter_by(user=user, book_title=...)`).
 - `vulnerable=0` is the author's **reference** recovery only. VAmPI warns some other vulns stay
   on at `vulnerable=0`; that's fine — we only verify BOLA.
-- Reset between runs: `scripts/reset-vampi.sh` (GET /createdb), or a fresh container.
+- Reset and seed once before snapshotting; fork that same frozen database for each candidate.
 
 VAmPI's 9 intentional vulns (only #3 BOLA is in scope): SQLi; unauthorized password change;
 **BOLA**; mass assignment; excessive data exposure (`/users/v1/_debug`); user/password
 enumeration; RegexDoS; no rate limiting; JWT bypass (weak key).
 
-## Fallback target — RecordShop
+## Historical fixture — RecordShop
 
-Our own Node/TS fixture in [`fixture/`](../fixture/README.md). Same BOLA shape, tailored
-contract, language-matched to the team. Kept as the fallback if VAmPI's container/Daytona
-path stalls, per the plan's kill/fallback rules. Probe: `npm run redteam -w @restorelab/fixture`.
+Our own Node/TS fixture in [`fixture/`](../fixture/README.md) is retained for
+history and API smoke tests. It is not an active final-demo target.

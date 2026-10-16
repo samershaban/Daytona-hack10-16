@@ -33,8 +33,8 @@ agents/.venv/bin/python -m agents run --target .data/vampi.json --run-id RUN_ID 
 ```
 
 The runtime reads Samer's existing scope approval. It cannot manufacture approvals
-or verifier verdicts. The HTTP adapter follows `origin/feat/api` revision `6178de2`
-without merging that branch. It publishes candidates, evidence, findings and messages.
+or verifier verdicts. The HTTP adapter follows the current main-branch API
+contract. It publishes candidates, evidence, findings and messages.
 Its reported backend store comes from `/health`; a local JSONL ledger is debug-only.
 The adapter still requires validation against Samer's running service.
 

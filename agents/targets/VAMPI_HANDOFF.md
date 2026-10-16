@@ -36,7 +36,8 @@ Still needed before a live run:
 - Hamza's authorized private sandbox access and agreed inspection window.
 
 Acceptance: name1/pass1 owns `restorelab-bola-book`, secret
-`S3CR3T-name1-canonical`; name2/pass2 is the foreign reader. Log in afresh via
+`S3CR3T-name1-canonical`; name2/pass2 owns `restorelab-name2-book` with secret
+`S3CR3T-name2-canonical` and is the foreign reader for name1's book. Log in afresh via
 `POST /users/v1/login` and use `Authorization: Bearer <auth_token>`. Owner must retain
 HTTP 200 and exact contents; foreign reader must get 404 without the secret. Check
 seed records, authentication, readiness, other legitimate book use and flag1.
