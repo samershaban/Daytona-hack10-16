@@ -41,6 +41,11 @@ const data = await getRunData().catch((error: unknown) => {
   $("app").textContent = `RestoreLab live arena: ${String(error)}`;
   throw error;
 });
+data.candidates.slice(0, 2).forEach((candidate, index) => {
+  CORNER[candidate.id] = index === 0
+    ? { corner: "blue", label: "Blue corner" }
+    : { corner: "red", label: "Red corner" };
+});
 $("mode").textContent = replayMode ? "SAMPLE REPLAY · SIMULATED" : "LIVE API";
 if (!replayMode) {
   $<HTMLButtonElement>("replay").hidden = true;
