@@ -69,6 +69,29 @@ Prints a `Finding` JSON (OWASP mapping, evidence, reproduction steps) and report
 the cross-tenant read was reproduced. Runs only against `ALLOWED_TARGETS`
 (default localhost). Reset between runs with `scripts/reset-fixture.sh`.
 
+## Real-world analog & stretch target: VAmPI
+
+Our RecordShop bug is the same class as the BOLA in [VAmPI](https://github.com/erev0s/VAmPI),
+an OWASP-catalogued vulnerable API. VAmPI's `GET /books/v1/{title}` returns another user's
+book secret with no owner check — identical shape to our `GET /api/records/:id`. We keep
+RecordShop as the **primary** target (Node/TS, tailored contract) and offer VAmPI as a P1
+**stretch** target to show the loop generalizes to a third-party app.
+
+```bash
+scripts/vampi-up.sh                 # needs docker: :5002 vulnerable=1, :5001 vulnerable=0 (reference fix)
+TARGET_URL=http://127.0.0.1:5002 npm run redteam:vampi -w @restorelab/fixture
+```
+
+The probe (`redteam/vampi.ts`) registers two synthetic users, has one store a secret, and
+proves the other can read it — emitting the same `Finding` JSON as RecordShop. `vulnerable=0`
+on :5001 is the deterministic reference recovery the plan requires.
+
+**VAmPI's 9 intentional vulns** (we scope the loop to #3 only; the rest are out of scope):
+SQLi; unauthorized password change; **BOLA (`GET /books/v1/{title}`)**; mass assignment
+(register as admin); excessive data exposure (`/users/v1/_debug`); user/password enumeration;
+RegexDoS; no rate limiting; JWT bypass (weak signing key). Auth: `Authorization: Bearer <auth_token>`
+from `POST /users/v1/login`.
+
 ## Handoff to Belal
 
 - Image: `docker build -f fixture/Dockerfile -t restorelab-fixture .`
