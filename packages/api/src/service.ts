@@ -1,8 +1,8 @@
 // RestoreLab run/event/knowledge rules. Routes stay thin; every rule from BUILD_PLAN.md that the
 // backend owns is enforced here, so it holds no matter which Store is behind it.
 import { randomUUID } from "node:crypto";
-import type { EventSource, Run, RunEvent, RunStatus } from "@restorelab/contracts";
-import { conflict, notFound } from "./errors.ts";
+import type { Approval, ApproveBody, EventSource, Run, RunEvent, RunStatus } from "@restorelab/contracts";
+import { ApiError, conflict, notFound, unprocessable } from "./errors.ts";
 import type { NewEvent, Store } from "./store/store.ts";
 
 export const newId = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
@@ -83,12 +83,60 @@ export class Service {
     if (run.status === from) await this.transition(runId, to, source, "automatic");
   }
 
-  protected async scopeApproved(_runId: string): Promise<boolean> {
-    return false;
+  protected async scopeApproved(runId: string): Promise<boolean> {
+    return (await this.store.list("approval", runId)).some((a) => a.kind === "scope" && a.decision === "approved");
+  }
+
+  /** Gate for every agent/red-team/verifier write: scope approved and run not finished. */
+  protected async requireOpen(runId: string): Promise<Run> {
+    const run = await this.getRun(runId);
+    if (!(await this.scopeApproved(runId)))
+      throw conflict("scope_not_approved", `run ${runId} has no approved scope; nothing may act on the target yet`);
+    if (TERMINAL.includes(run.status)) throw conflict("run_closed", `run ${runId} is ${run.status}`);
+    return run;
   }
 
   async listEvents(runId: string, afterSeq = 0) {
     await this.getRun(runId);
     return this.store.listEvents(runId, afterSeq);
+  }
+
+  // ---------- approvals (human gate) ----------
+
+  /**
+   * Records a human decision. Idempotent: repeating the same decision returns the stored one; a
+   * conflicting second decision is refused. Scope approval starts the run; scope denial fails it.
+   * Remediation approval is only for the candidate the backend selected after verification.
+   */
+  approve(runId: string, body: ApproveBody, source: EventSource): Promise<Approval> {
+    return this.withRunLock(runId, async () => {
+      if (source !== "human") throw new ApiError(403, "human_only", "approvals must come from a human (x-role: human)");
+      const run = await this.getRun(runId);
+      const prior = (await this.store.list("approval", runId)).find((a) =>
+        a.kind === body.kind && (body.kind === "scope" || a.candidateId === body.candidateId));
+      if (prior) {
+        if (prior.decision !== body.decision) throw conflict("already_decided", `${body.kind} was already ${prior.decision}`);
+        return prior;
+      }
+      if (body.kind === "scope" && run.status !== "awaiting_scope_approval")
+        throw conflict("illegal_transition", `run ${runId} is ${run.status}, not awaiting scope approval`);
+      if (body.kind === "remediation") {
+        if (run.status !== "completed" || !run.selectedCandidateId)
+          throw conflict("nothing_to_approve", `run ${runId} has no verified, selected candidate yet`);
+        if (body.candidateId !== run.selectedCandidateId)
+          throw unprocessable("not_selected", `only the selected candidate ${run.selectedCandidateId} can be approved for remediation`);
+      }
+      const approval = await this.store.insert("approval", { id: newId("apr"), runId, ...body, createdAt: now() });
+      await this.event({ runId, type: "approval.recorded", source, candidateId: body.candidateId, payload: approval });
+      if (body.kind === "scope")
+        await this.transition(runId, body.decision === "approved" ? "investigating" : "failed", source,
+          body.decision === "approved" ? "scope approved" : "scope denied");
+      return approval;
+    });
+  }
+
+  async listApprovals(runId: string) {
+    await this.getRun(runId);
+    return this.store.list("approval", runId);
   }
 }
