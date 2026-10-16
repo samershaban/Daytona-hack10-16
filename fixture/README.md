@@ -1,5 +1,9 @@
 # @restorelab/fixture — RecordShop (vulnerable target)
 
+> **Status: FALLBACK target.** The primary target is now **VAmPI** — see
+> [`redteam/README.md`](../redteam/README.md). RecordShop stays as the language-matched
+> Node/TS fallback if the VAmPI/Daytona path stalls.
+
 A small, **team-owned, synthetic** multi-tenant API with a deliberate **BOLA** bug
 (OWASP API1:2023 / WSTG-ATHZ-04). This is the target for the whole RestoreLab loop:
 red-team proves the bug, recovery agents fix it, verifier proves the fix.
