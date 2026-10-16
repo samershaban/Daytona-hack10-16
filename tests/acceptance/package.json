@@ -1,0 +1,13 @@
+{
+  "name": "@restorelab/acceptance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent acceptance contract for the BOLA fix (Hamza)",
+  "type": "module",
+  "exports": {
+    ".": "./contract.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
