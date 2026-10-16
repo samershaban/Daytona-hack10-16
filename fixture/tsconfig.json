@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "es2022", "module": "nodenext", "moduleResolution": "nodenext",
+    "strict": true, "skipLibCheck": true, "noEmit": true, "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  "include": ["src", "../redteam"]
+}
