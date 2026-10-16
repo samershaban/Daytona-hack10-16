@@ -66,7 +66,8 @@ export type RunEvent = {
 
 export type EventType =
   | 'run.created' | 'run.status' | 'approval.recorded' | 'evidence.added' | 'finding.published'
-  | 'message.posted' | 'candidate.created' | 'candidate.updated' | 'verdict.recorded' | 'run.completed';
+  | 'message.posted' | 'candidate.created' | 'candidate.updated' | 'verdict.recorded' | 'run.completed'
+  | 'memory.stored' | 'memory.failed';
 
 export type CandidateAssessment = {
   candidate: Candidate; verdict?: Verdict; eligible: boolean; reasons: string[];

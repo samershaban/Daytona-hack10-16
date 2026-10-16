@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
+import { McpAgentMemory } from "./memory.ts";
 import { JsonlStore } from "./store/jsonl.ts";
 import { MemoryStore } from "./store/memory.ts";
 import { SurrealStore } from "./store/surreal.ts";
@@ -11,20 +12,17 @@ async function openStore(): Promise<Store> {
   if (kind === "memory") return new MemoryStore();
   if (kind === "jsonl")
     return JsonlStore.open(process.env.JSONL_PATH ?? fileURLToPath(new URL("../../../.data/api.jsonl", import.meta.url)));
-  if (kind === "surreal")
-    return SurrealStore.open({
-      url: process.env.SURREAL_URL ?? "ws://127.0.0.1:8000/rpc",
-      username: process.env.SURREAL_USER ?? "root",
-      password: process.env.SURREAL_PASS ?? "root",
-    });
+  if (kind === "surreal") return SurrealStore.fromEnv();
   throw new Error(`unknown STORE=${kind} (expected memory | jsonl | surreal)`);
 }
 
 const store = await openStore();
+const memory = McpAgentMemory.fromEnv();
+const app = createApp(store, { memory });
 const port = Number(process.env.PORT ?? 4000);
-const server = serve({ fetch: createApp(store).fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, (info) =>
-  console.log(`RestoreLab API on http://localhost:${info.port} (store: ${store.name})`),
+const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, (info) =>
+  console.log(`RestoreLab API on http://localhost:${info.port} (store: ${store.name}, agent memory: ${memory ? "enabled" : "disabled"})`),
 );
 
 for (const sig of ["SIGINT", "SIGTERM"] as const)
-  process.on(sig, () => server.close(async () => { await store.close(); process.exit(0); }));
+  process.on(sig, () => server.close(async () => { await app.svc.flushMemory(); await store.close(); process.exit(0); }));

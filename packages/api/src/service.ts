@@ -7,6 +7,7 @@ import type {
   UpdateCandidateBody, Verdict,
 } from "@restorelab/contracts";
 import { ApiError, conflict, notFound, unprocessable } from "./errors.ts";
+import { AgentMemoryError, type AgentMemory } from "./memory.ts";
 import { findSecret, redact } from "./secrets.ts";
 import type { NewEvent, Store } from "./store/store.ts";
 
@@ -27,8 +28,10 @@ export const TERMINAL: RunStatus[] = ["completed", "failed", "unknown"];
 
 export class Service {
   private locks = new Map<string, Promise<unknown>>();
+  private memoryWrites = new Set<Promise<void>>();
 
-  constructor(readonly store: Store) {}
+  /** `memory` is optional: without it findings and decisions are only kept in the store. */
+  constructor(readonly store: Store, readonly memory: AgentMemory | null = null) {}
 
   /**
    * Serializes writes per run so check-then-write rules (candidate cap, idempotent retries,
@@ -189,6 +192,11 @@ export class Service {
       });
       const finding = await this.store.insert("finding", { id: newId("fnd"), runId, ...body, createdAt: now() });
       await this.event({ runId, type: "finding.published", source, payload: finding });
+      const run = await this.getRun(runId);
+      this.memorize(runId, { kind: "finding", id: finding.id },
+        `RestoreLab finding ${finding.id} (${finding.category}) by ${finding.author} on ${run.targetUrl} version ${run.targetVersion}, ` +
+        `scope ${finding.targetScope}: ${finding.observation} [evidence: ${finding.evidenceIds.join(", ")}; run ${runId}]`,
+        [`kind=finding`, `category=${finding.category}`, `author=${finding.author}`, `target_version=${run.targetVersion}`]);
       return finding;
     });
   }
@@ -216,6 +224,10 @@ export class Service {
       if (unknown.length) throw unprocessable("unknown_finding", `findings not in run ${runId}: ${unknown.join(", ")}`);
       const msg = await this.store.insert("message", { id: newId("msg"), runId, ...body, findingIds, createdAt: now() });
       await this.event({ runId, type: "message.posted", source, payload: msg });
+      if (msg.type === "finding" || msg.type === "decision")
+        this.memorize(runId, { kind: msg.type, id: msg.id },
+          `RestoreLab agent ${msg.type} from ${msg.from} to ${msg.to}, citing findings ${msg.findingIds.join(", ")}: ${msg.body} [run ${runId}]`,
+          [`kind=${msg.type}`, `author=${msg.from}`]);
       return msg;
     });
   }
@@ -392,7 +404,50 @@ export class Service {
       return report;
     });
   }
+
+  // ---------- Agent Memory (SurrealDB Agent Memory, cross-run) ----------
+
+  /**
+   * Copies a finding or agent message into Agent Memory in the background. Text has already
+   * passed the credential guard. Never blocks or fails the API write; the outcome is recorded as
+   * a memory.stored / memory.failed event so the dashboard can show it.
+   */
+  protected memorize(runId: string, ref: { kind: string; id: string }, text: string, labels: string[]) {
+    if (!this.memory) return;
+    const all = ["app=restorelab", `run=${runId}`, `ref=${ref.id}`, ...labels].map((l) => {
+      const i = l.indexOf("=");
+      return `${l.slice(0, i)}=${label(l.slice(i + 1))}`;
+    });
+    const write = this.memory.remember(text, all).then(
+      (r: any) => this.event({ runId, type: "memory.stored", source: "api", payload: { ...ref, labels: all, turnId: r?.turn_id, traceId: r?.trace_id } }),
+      (err) => {
+        console.warn(`agent memory: ${ref.kind} ${ref.id} not stored: ${(err as Error).message}`);
+        return this.event({ runId, type: "memory.failed", source: "api", payload: { ...ref, error: (err as Error).message } });
+      },
+    ).then(() => {}, () => {});
+    this.memoryWrites.add(write);
+    write.finally(() => this.memoryWrites.delete(write));
+  }
+
+  /** Waits for background memory writes (shutdown, tests). */
+  async flushMemory() {
+    await Promise.all([...this.memoryWrites]);
+  }
+
+  /** Searches what RestoreLab has remembered, across runs unless `runId` narrows it. */
+  async recallMemory(query: string, opts: { runId?: string; kind?: string; k?: number } = {}) {
+    if (!this.memory) throw new ApiError(503, "memory_disabled", "Agent Memory is not configured (set AGENT_MEMORY_URL and AGENT_MEMORY_API_KEY)");
+    const labels = ["app=restorelab", ...(opts.runId ? [`run=${label(opts.runId)}`] : []), ...(opts.kind ? [`kind=${label(opts.kind)}`] : [])];
+    try {
+      return await this.memory.recall(query, { labels, k: opts.k });
+    } catch (err) {
+      if (err instanceof AgentMemoryError) throw new ApiError(502, "memory_unavailable", err.message);
+      throw err;
+    }
+  }
 }
+
+const label = (v: string) => v.replace(/[\s,=]+/g, "_").slice(0, 120);
 
 function rejectSecrets(fields: Record<string, string>) {
   for (const [field, text] of Object.entries(fields)) {
