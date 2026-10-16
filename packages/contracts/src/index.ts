@@ -53,6 +53,8 @@ export type Approval = {
 export type Evidence = {
   id: string; runId: string; kind: 'http' | 'log' | 'patch' | 'test' | 'other'; label: string;
   content?: string; uri?: string; sha256?: string; candidateId?: string; author: string; createdAt: string;
+  /** Number of credentials the API replaced with [REDACTED ...] in `content`. */
+  redactions: number;
 };
 
 export type EventSource = 'orchestrator' | 'redteam' | 'agent' | 'verifier' | 'human' | 'api';

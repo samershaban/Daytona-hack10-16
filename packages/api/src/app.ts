@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { ApiError } from "./errors.ts";
 import type { Env } from "./http.ts";
 import { approvals } from "./routes/approvals.ts";
+import { knowledge } from "./routes/knowledge.ts";
 import { runs } from "./routes/runs.ts";
 import { Service } from "./service.ts";
 import type { Store } from "./store/store.ts";
@@ -16,6 +17,7 @@ export function createApp(store: Store) {
     .get("/health", (c) => c.json({ ok: true, store: store.name }))
     .route("/runs", runs)
     .route("/runs", approvals)
+    .route("/runs", knowledge)
     .notFound((c) => c.json({ error: "not_found", message: `${c.req.method} ${c.req.path} is not an endpoint` }, 404))
     .onError((err, c) => {
       if (err instanceof ApiError) return c.json({ error: err.code, message: err.message }, err.status);

@@ -1,8 +1,12 @@
 // RestoreLab run/event/knowledge rules. Routes stay thin; every rule from BUILD_PLAN.md that the
 // backend owns is enforced here, so it holds no matter which Store is behind it.
-import { randomUUID } from "node:crypto";
-import type { Approval, ApproveBody, EventSource, Run, RunEvent, RunStatus } from "@restorelab/contracts";
+import { createHash, randomUUID } from "node:crypto";
+import type {
+  AgentMessage, Approval, ApproveBody, CreateEvidenceBody, CreateFindingBody, CreateMessageBody,
+  EventSource, Evidence, Finding, Run, RunEvent, RunStatus,
+} from "@restorelab/contracts";
 import { ApiError, conflict, notFound, unprocessable } from "./errors.ts";
+import { findSecret, redact } from "./secrets.ts";
 import type { NewEvent, Store } from "./store/store.ts";
 
 export const newId = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
@@ -138,5 +142,100 @@ export class Service {
   async listApprovals(runId: string) {
     await this.getRun(runId);
     return this.store.list("approval", runId);
+  }
+
+  // ---------- evidence ----------
+
+  /** Stores a raw artifact. Credentials in `content` are redacted before storage and hashing. */
+  addEvidence(runId: string, body: CreateEvidenceBody, source: EventSource): Promise<Evidence> {
+    return this.withRunLock(runId, async () => {
+      await this.requireOpen(runId);
+      if (body.candidateId) await this.getCandidateIn(runId, body.candidateId);
+      const { text, redactions } = body.content != null ? redact(body.content) : { text: undefined, redactions: 0 };
+      const evidence = await this.store.insert("evidence", {
+        id: newId("ev"), runId, ...body, content: text,
+        sha256: text != null ? createHash("sha256").update(text).digest("hex") : undefined,
+        redactions, createdAt: now(),
+      });
+      const { content: _, ...summary } = evidence;
+      await this.event({ runId, type: "evidence.added", source, candidateId: body.candidateId, payload: summary });
+      return evidence;
+    });
+  }
+
+  async getEvidence(runId: string, id: string) {
+    const ev = await this.store.get("evidence", id);
+    if (!ev || ev.runId !== runId) throw notFound("evidence", id);
+    return ev;
+  }
+
+  async listEvidence(runId: string) {
+    await this.getRun(runId);
+    return (await this.store.list("evidence", runId)).map(({ content: _, ...summary }) => summary);
+  }
+
+  // ---------- findings + agent messages (collective intelligence) ----------
+
+  /** A finding must point at stored evidence from this run and must not contain credentials. */
+  publishFinding(runId: string, body: CreateFindingBody, source: EventSource): Promise<Finding> {
+    return this.withRunLock(runId, async () => {
+      await this.requireOpen(runId);
+      rejectSecrets({ observation: body.observation, targetScope: body.targetScope });
+      for (const id of body.evidenceIds) await this.getEvidence(runId, id).catch(() => {
+        throw unprocessable("unknown_evidence", `evidence ${id} is not stored for run ${runId}; POST it to /runs/${runId}/evidence first`);
+      });
+      const finding = await this.store.insert("finding", { id: newId("fnd"), runId, ...body, createdAt: now() });
+      await this.event({ runId, type: "finding.published", source, payload: finding });
+      return finding;
+    });
+  }
+
+  /** `excludeAuthor` lets an agent read only what other agents found. */
+  async listFindings(runId: string, opts: { author?: string; excludeAuthor?: string } = {}) {
+    await this.getRun(runId);
+    return (await this.store.list("finding", runId)).filter((f) =>
+      (!opts.author || f.author === opts.author) && (!opts.excludeAuthor || f.author !== opts.excludeAuthor));
+  }
+
+  /**
+   * Agent-to-agent message. `finding` and `decision` messages must cite at least one finding, and
+   * every cited finding must exist in this run, so each decision is traceable to evidence.
+   */
+  postMessage(runId: string, body: CreateMessageBody, source: EventSource): Promise<AgentMessage> {
+    return this.withRunLock(runId, async () => {
+      await this.requireOpen(runId);
+      rejectSecrets({ body: body.body });
+      const findingIds = [...new Set(body.findingIds ?? [])];
+      if ((body.type === "finding" || body.type === "decision") && findingIds.length === 0)
+        throw unprocessable("missing_citation", `a ${body.type} message must cite at least one finding in findingIds`);
+      const known = new Set((await this.store.list("finding", runId)).map((f) => f.id));
+      const unknown = findingIds.filter((id) => !known.has(id));
+      if (unknown.length) throw unprocessable("unknown_finding", `findings not in run ${runId}: ${unknown.join(", ")}`);
+      const msg = await this.store.insert("message", { id: newId("msg"), runId, ...body, findingIds, createdAt: now() });
+      await this.event({ runId, type: "message.posted", source, payload: msg });
+      return msg;
+    });
+  }
+
+  /** `forAgent` returns messages addressed to that agent or to the room, excluding its own. */
+  async listMessages(runId: string, opts: { forAgent?: string } = {}) {
+    await this.getRun(runId);
+    return (await this.store.list("message", runId)).filter((m) =>
+      !opts.forAgent || (m.from !== opts.forAgent && (m.to === "room" || m.to === opts.forAgent)));
+  }
+
+  // ---------- candidates ----------
+
+  protected async getCandidateIn(runId: string, id: string) {
+    const cand = await this.store.get("candidate", id);
+    if (!cand || cand.runId !== runId) throw notFound("candidate", id);
+    return cand;
+  }
+}
+
+function rejectSecrets(fields: Record<string, string>) {
+  for (const [field, text] of Object.entries(fields)) {
+    const kind = findSecret(text);
+    if (kind) throw unprocessable("secret_detected", `${field} looks like it contains a ${kind}; refer to identities by name, never share credentials`);
   }
 }
