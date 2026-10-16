@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    env_file:
+      - ${RESTORELAB_ENV_FILE:?Set absolute path to the existing API environment file}
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000
+    volumes:
+      - ${RESTORELAB_DATA_DIR:?Set absolute path to the existing durable API data directory}:/app/.data
+    networks: [restorelab]
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.dashboard
+    depends_on: [api]
+    ports:
+      - "127.0.0.1:8080:80"
+    networks: [restorelab]
+    restart: unless-stopped
+
+networks:
+  restorelab:
