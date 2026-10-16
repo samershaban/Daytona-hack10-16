@@ -4,6 +4,8 @@
 //
 // Scope guard: refuses to run against anything but an explicitly allowed owned target.
 // Emits a Finding JSON (matches shared/contracts Finding shape) to stdout for Samer's API.
+import { postFinding } from "./post.ts";
+
 const TARGET = process.env.TARGET_URL ?? "http://127.0.0.1:3000";
 const ALLOWED = (process.env.ALLOWED_TARGETS ?? "http://127.0.0.1:3000,http://localhost:3000").split(",");
 
@@ -37,7 +39,7 @@ async function main() {
   const reproduced = attack.status === 200 && attack.body?.record?.tenantId === "tenant-b";
 
   const finding = {
-    category: "OWASP-API1-2023",
+    category: "OWASP-API1-2023" as const,
     title: "Broken Object Level Authorization: cross-tenant record read",
     classification: { owasp: "API1:2023", wstg: "WSTG-ATHZ-04", asvs: "ASVS 5.0 V8.2.2" },
     targetScope: TARGET,
@@ -60,6 +62,8 @@ async function main() {
   if (reproduced) console.error("\nBOLA REPRODUCED: tenant A read tenant B's record.");
   else console.error("\nNot reproduced: cross-tenant read was denied (target appears fixed).");
   // Exit 0 = ran cleanly. `reproduced` is in the JSON; callers key off that, not the exit code.
+
+  await postFinding(finding, { baseFixtureId: "recordshop", targetVersion: "fixture-local" });
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

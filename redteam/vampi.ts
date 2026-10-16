@@ -5,6 +5,8 @@
 //
 // name1 owns the book; name2 (foreign user) reads it by title. vulnerable=1 -> 200 + secret
 // (bug); fixed -> 404. Emits the shared Finding JSON. Scope-guarded to owned VAmPI instances.
+import { postFinding } from "./post.ts";
+
 const TARGET = process.env.TARGET_URL ?? "http://127.0.0.1:5002";
 const ALLOWED = (process.env.ALLOWED_TARGETS ?? "http://127.0.0.1:5001,http://127.0.0.1:5002,http://localhost:5001,http://localhost:5002").split(",");
 
@@ -50,7 +52,7 @@ async function main() {
   const reproduced = attack.status === 200 && typeof attack.body?.secret === "string";
 
   const finding = {
-    category: "OWASP-API1-2023",
+    category: "OWASP-API1-2023" as const,
     title: "Broken Object Level Authorization: cross-user book-secret read (VAmPI)",
     classification: { owasp: "API1:2023", wstg: "WSTG-ATHZ-04", asvs: "ASVS 5.0 V8.2.2" },
     targetScope: TARGET,
@@ -74,6 +76,8 @@ async function main() {
   console.error(reproduced
     ? `\nBOLA REPRODUCED on VAmPI: ${ATTACKER.username} read ${OWNER.username}'s secret.`
     : "\nNot reproduced: cross-user read denied (target appears fixed).");
+
+  await postFinding(finding, { baseFixtureId: "vampi@f16052dc", targetVersion: "f16052dce83f05847133ec98f01c5193a41de7d8" });
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
