@@ -89,7 +89,10 @@ function build(): void {
     .join("");
 
   const head = `<thead><tr><th class="check-col">Check</th>${data.candidates
-    .map((c) => `<th>${esc(c.id)}</th>`)
+    .map((c) => {
+      const failed = verdictOf.get(c.id)?.decision === "fail";
+      return `<th class="cand-head${failed ? " failed" : ""}">${esc(c.id)}${failed ? `<span class="col-tag">FAIL</span>` : ""}</th>`;
+    })
     .join("")}</tr></thead>`;
   const rows = CHECKS.map((check) => {
     const cells = data.candidates
@@ -97,8 +100,9 @@ function build(): void {
         const r = verdictOf.get(c.id)?.checks.find((x) => x.name === check.name);
         const state = r ? (r.passed === true ? "pass" : r.passed === false ? "fail" : "unknown") : "unknown";
         const culprit = state === "fail" && check.required && outcome.loserIds.has(c.id) ? " culprit" : "";
+        const colFail = verdictOf.get(c.id)?.decision === "fail";
         const glyph = state === "pass" ? "✓" : state === "fail" ? "✕" : "?";
-        return `<td class="cell" data-key="${esc(c.id)}|${check.name}" data-state="${state}${culprit}"
+        return `<td class="cell${colFail ? " col-fail" : ""}" data-key="${esc(c.id)}|${check.name}" data-state="${state}${culprit}"
           data-tip="${esc(r?.evidenceId ?? "no evidence")}"><span>${glyph}</span></td>`;
       })
       .join("");
