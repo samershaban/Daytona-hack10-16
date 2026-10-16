@@ -6,20 +6,23 @@ import type { Env } from "./http.ts";
 import { approvals } from "./routes/approvals.ts";
 import { candidates } from "./routes/candidates.ts";
 import { knowledge } from "./routes/knowledge.ts";
+import { memory as memoryRoutes } from "./routes/memory.ts";
+import type { AgentMemory } from "./memory.ts";
 import { runs } from "./routes/runs.ts";
 import { Service } from "./service.ts";
 import type { Store } from "./store/store.ts";
 
-export function createApp(store: Store) {
-  const svc = new Service(store);
-  return new Hono<Env>()
+export function createApp(store: Store, opts: { memory?: AgentMemory | null } = {}) {
+  const svc = new Service(store, opts.memory ?? null);
+  const app = new Hono<Env>()
     .use(cors())
     .use(async (c, next) => { c.set("svc", svc); await next(); })
-    .get("/health", (c) => c.json({ ok: true, store: store.name }))
+    .get("/health", (c) => c.json({ ok: true, store: store.name, agentMemory: svc.memory ? "enabled" : "disabled" }))
     .route("/runs", runs)
     .route("/runs", approvals)
     .route("/runs", knowledge)
     .route("/runs", candidates)
+    .route("/memory", memoryRoutes)
     .notFound((c) => c.json({ error: "not_found", message: `${c.req.method} ${c.req.path} is not an endpoint` }, 404))
     .onError((err, c) => {
       if (err instanceof ApiError) return c.json({ error: err.code, message: err.message }, err.status);
@@ -28,4 +31,5 @@ export function createApp(store: Store) {
       console.error(err);
       return c.json({ error: "internal", message: "internal error" }, 500);
     });
+  return Object.assign(app, { svc });
 }

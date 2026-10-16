@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 export class ApiError extends Error {
-  constructor(readonly status: 400 | 403 | 404 | 409 | 422, readonly code: string, message: string) {
+  constructor(readonly status: 400 | 403 | 404 | 409 | 422 | 502 | 503, readonly code: string, message: string) {
     super(message);
   }
 }

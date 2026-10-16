@@ -46,6 +46,7 @@ Send `content-type: application/json` and an `x-role` header: `orchestrator`, `r
 | `GET /runs/:id/verdicts` | anyone | |
 | `GET /runs/:id/report` | dashboard | live assessment, safe to poll |
 | `POST /runs/:id/complete` | orchestrator | selects the winner and closes the run |
+| `GET /memory?q=&run=&kind=&k=` | agents | search Agent Memory across runs (`kind`: `finding` / `decision`); 503 if not configured |
 
 ## Rules enforced here
 
@@ -57,6 +58,16 @@ Send `content-type: application/json` and an `x-role` header: `orchestrator`, `r
 - Selection: a candidate is eligible only with a `pass` verdict, all checks passed, the run's baseline and a measured `recoveryMs`. The fastest eligible candidate wins. `complete` requires a verdict for every candidate.
 - Remediation approval is accepted only for the selected candidate.
 - Event `seq` is per run, gap-free and ordered.
+
+## Agent Memory (SurrealDB Agent Memory / Spectron Cloud)
+
+Optional cross-run memory for the agents. Set `AGENT_MEMORY_URL` and `AGENT_MEMORY_API_KEY` (a `sp-...` key from SurrealDB Studio > API keys; no username/password) and start with `npm run start:env`. `/health` shows `agentMemory: enabled`.
+
+- Every published finding and every `finding` / `decision` message is copied into Agent Memory in the background via the MCP `remember` tool, labelled `app=restorelab`, `run=<runId>`, `kind=...`, `ref=<id>`, `author=...` (findings also `category`, `target_version`).
+- Writes never block or fail the API call. Each one produces a `memory.stored` or `memory.failed` event in the run's feed.
+- `GET /memory?q=...` searches with MCP `recall`, filtered to `app=restorelab` (and `run` / `kind` if given). Leave out `run` to get what earlier runs learned.
+- `AGENT_MEMORY_INFER=none` stores raw text without LLM extraction.
+- The API's own store stays the source of truth; Agent Memory is a recall aid and is never used for verdicts or selection.
 
 ## SurrealDB
 

@@ -6,6 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "./app.ts";
+import { AgentMemoryError, type AgentMemory } from "./memory.ts";
 import { JsonlStore } from "./store/jsonl.ts";
 import { MemoryStore } from "./store/memory.ts";
 import type { Store } from "./store/store.ts";
@@ -107,6 +108,51 @@ assert.deepEqual(events.map((e: any) => e.seq), events.map((_: unknown, i: numbe
 const tail = await call("GET", `${R}/events?after=${events.length - 2}`, "orchestrator");
 assert.deepEqual(tail.map((e: any) => e.type), ["run.completed", "approval.recorded"]);
 step(`${events.length} events, gap-free seq, ?after= polling`);
+
+await call("GET", "/memory?q=bola", "agent", undefined, 503);
+step("GET /memory is 503 when Agent Memory is not configured");
+
+// Agent Memory wiring, with an in-process fake (no network): writes are best-effort and labelled.
+{
+  const remembered: { text: string; labels: string[] }[] = [];
+  let failNext = false;
+  const fake: AgentMemory = {
+    async remember(text, labels) {
+      if (failNext) { failNext = false; throw new AgentMemoryError("remember: 503 unavailable"); }
+      remembered.push({ text, labels });
+      return { turn_id: `turn_${remembered.length}` };
+    },
+    async recall(query, opts) { return { query, labels: opts?.labels, hits: remembered.filter((m) => opts?.labels?.every((l) => m.labels.includes(l))) }; },
+  };
+  const mapp = createApp(new MemoryStore(), { memory: fake });
+  const mcall = async (method: string, path: string, role: string, body?: unknown, expect = method === "POST" ? 201 : 200) => {
+    const res = await mapp.request(path, { method, headers: { "content-type": "application/json", "x-role": role }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const json: any = await res.json();
+    assert.equal(res.status, expect, `${method} ${path} -> ${res.status} ${JSON.stringify(json)}`);
+    return json;
+  };
+  const mrun = await mcall("POST", "/runs", "orchestrator", { targetUrl: "http://127.0.0.1:3000", baseFixtureId: "fixture-v1", targetVersion: "v1 beta" });
+  const M = `/runs/${mrun.id}`;
+  await mcall("POST", `${M}/approve`, "human", { kind: "scope", decision: "approved", approver: "samer" });
+  const mev = await mcall("POST", `${M}/evidence`, "redteam", { kind: "http", label: "probe", content: "200", author: "redteam" });
+  const mf = await mcall("POST", `${M}/findings`, "redteam", { author: "redteam", category: "OWASP-API1-2023", observation: "alice read rec-2001", evidenceIds: [mev.id], targetScope: "GET /api/records/:id" });
+  failNext = true;
+  await mcall("POST", `${M}/messages`, "agent", { from: "agentA", to: "room", type: "finding", findingIds: [mf.id], body: "no tenant check" });
+  await mcall("POST", `${M}/messages`, "agent", { from: "agentB", to: "room", type: "decision", findingIds: [mf.id], body: "scope query by tenant" });
+  await mcall("POST", `${M}/messages`, "agent", { from: "agentB", to: "room", type: "hypothesis", body: "maybe cache" });
+  await mapp.svc.flushMemory();
+  assert.equal(remembered.length, 2); // finding + decision; the failed one and the hypothesis are not stored
+  assert.ok(remembered[0].labels.includes("kind=finding") && remembered[0].labels.includes(`run=${mrun.id}`) && remembered[0].labels.includes("target_version=v1_beta"));
+  assert.ok(remembered[0].text.includes("alice read rec-2001"));
+  const mevents = (await mcall("GET", `${M}/events`, "orchestrator")).map((e: any) => e.type);
+  assert.equal(mevents.filter((t: string) => t === "memory.stored").length, 2);
+  assert.equal(mevents.filter((t: string) => t === "memory.failed").length, 1);
+  const hits = await mcall("GET", `/memory?q=tenant&kind=decision&run=${mrun.id}`, "agent");
+  assert.deepEqual(hits.labels, ["app=restorelab", `run=${mrun.id}`, "kind=decision"]);
+  assert.equal(hits.hits.length, 1);
+  assert.equal((await mcall("GET", "/health", "agent")).agentMemory, "enabled");
+  step("Agent Memory: findings/decisions stored with labels, failures recorded not thrown, /memory filters");
+}
 
 await store.close();
 console.log(`\nsmoke passed (store: ${store.name})`);
