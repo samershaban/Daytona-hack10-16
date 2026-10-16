@@ -3,8 +3,9 @@
 
 const PATTERNS: [name: string, re: RegExp][] = [
   // Header patterns first so a header is redacted as one unit before the bare-token patterns run.
-  ["authorization header", /\b(proxy-)?authorization\s*:[^\r\n]*/gi],
-  ["cookie header", /\b(set-)?cookie\s*:[^\r\n]*/gi],
+  // Anchored to line start so prose like "Broken Object Level Authorization: ..." is not a header.
+  ["authorization header", /^[ \t]*(proxy-)?authorization[ \t]*:[^\r\n]*/gim],
+  ["cookie header", /^[ \t]*(set-)?cookie[ \t]*:[^\r\n]*/gim],
   ["bearer token", /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi],
   ["AWS access key", /\b(AKIA|ASIA)[0-9A-Z]{16}\b/g],
   ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g],
