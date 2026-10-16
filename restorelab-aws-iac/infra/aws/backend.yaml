@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  RestoreLab hackathon shared API host. Existing public subnet, one encrypted EC2,
+  SSH restricted to an explicit admin /32. Managed SurrealDB is external. No IAM role or DB.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing approved workshop VPC.
+  PublicSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Existing approved subnet with a route to an Internet Gateway.
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 SSH key pair. Never commit the private key.
+  AdminCidr:
+    Type: String
+    Description: Your public IPv4 address with /32 (for example 203.0.113.10/32). Never 0.0.0.0/0.
+    AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/32$'
+    ConstraintDescription: Must be one IPv4 address ending in /32.
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3a.small
+      - t3a.medium
+    Description: Must be permitted and available in the workshop account.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: AWS-maintained public SSM parameter for Amazon Linux 2023 x86_64.
+  EnablePublicHttps:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      Keep false until the backend authenticates requests and a working HTTPS proxy is deployed.
+      true permits public ports 80 (TLS issuance/redirect) and 443; it does not configure TLS.
+
+Conditions:
+  PublicHttpsEnabled: !Equals [!Ref EnablePublicHttps, 'true']
+
+Resources:
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RestoreLab temporary API host; no public SurrealDB or app development port.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AdminCidr
+          Description: Restricted SSH administrator
+        - !If
+          - PublicHttpsEnabled
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+            Description: TLS challenge and redirect only
+          - !Ref AWS::NoValue
+        - !If
+          - PublicHttpsEnabled
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: 0.0.0.0/0
+            Description: HTTPS authenticated team backend only
+          - !Ref AWS::NoValue
+      Tags:
+        - Key: Project
+          Value: RestoreLab
+        - Key: Purpose
+          Value: ephemeral-hackathon-backend
+
+  BackendInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          SubnetId: !Ref PublicSubnetId
+          GroupSet:
+            - !Ref BackendSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf install -y docker git jq
+          systemctl enable --now docker
+          install -d -m 0750 -o ec2-user -g ec2-user /opt/restorelab
+          printf 'bootstrap complete\n' > /opt/restorelab/bootstrap.status
+          chown ec2-user:ec2-user /opt/restorelab/bootstrap.status
+          # Deployment and third-party credentials are intentionally NOT in UserData.
+          # Do not expose application port 3000 or SurrealDB database port 8000.
+      Tags:
+        - Key: Name
+          Value: restorelab-shared-backend
+        - Key: Project
+          Value: RestoreLab
+        - Key: Purpose
+          Value: ephemeral-hackathon-backend
+
+Outputs:
+  InstanceId:
+    Description: EC2 host instance ID.
+    Value: !Ref BackendInstance
+  PublicIp:
+    Description: Ephemeral public IP. It can change after stop/start.
+    Value: !GetAtt BackendInstance.PublicIp
+  PublicDns:
+    Value: !GetAtt BackendInstance.PublicDnsName
+  SecurityGroupId:
+    Value: !Ref BackendSecurityGroup
+  SshHint:
+    Description: Replace YOUR_KEY.pem and use the private key on your own device.
+    Value: !Sub 'ssh -i YOUR_KEY.pem ec2-user@${BackendInstance.PublicIp}'
+  PublicHttpsEnabled:
+    Value: !Ref EnablePublicHttps
