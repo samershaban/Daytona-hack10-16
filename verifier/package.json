@@ -1,0 +1,24 @@
+{
+  "name": "@restorelab/verifier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent verifier: runs the tests/acceptance contract against a candidate (Hamza)",
+  "type": "module",
+  "exports": {
+    ".": "./runVerifier.ts"
+  },
+  "scripts": {
+    "verify": "tsx cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@restorelab/acceptance": "file:../tests/acceptance",
+    "@restorelab/evals": "file:../packages/evals",
+    "dotenv": "^18.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
