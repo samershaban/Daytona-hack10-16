@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Baseline-equality check: hash the NORMALIZED observable state of a VAmPI instance so every
-# candidate sandbox can be proven to start from the identical seeded baseline. We hash API
-# state (users + the canonical book + the vuln flag), not the raw SQLite file, because the
-# .db byte layout isn't guaranteed reproducible while the observable state is.
+# candidate sandbox can be proven to start from the identical seeded baseline. We hash the
+# KNOWN state (seeded users + the canonical book + the vuln flag) and deliberately EXCLUDE the
+# 3 random auto-books from init_db_users() (titles are random per /createdb, can't be deleted,
+# and are irrelevant to the scenario). We hash API state, not the raw SQLite file, because the
+# .db byte layout isn't guaranteed reproducible while this observable state is.
+# Note: GET /books/v1 (list-all) is intentionally NOT hashed, as it includes the random books.
 #
 # Run this against each candidate right after seed-vampi.sh; the hashes must match.
 # Usage: scripts/vampi-baseline-hash.sh [TARGET_URL]
