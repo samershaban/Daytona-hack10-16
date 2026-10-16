@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+.data
+.aws
+**/node_modules
+**/.venv
+**/dist
+**/__pycache__
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials.csv
+*.zip

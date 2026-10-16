@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "target": "VAmPI",
+  "scope": "GET /books/v1/{title}",
+  "name": "vampi-book-bola",
+  "source_repository": "https://github.com/erev0s/VAmPI",
+  "source_commit": "f16052dce83f05847133ec98f01c5193a41de7d8",
+  "image": null,
+  "snapshot": null,
+  "snapshot_id": null,
+  "base_fixture_id": null,
+  "workspace": "/vampi",
+  "baseline_sha256": {
+    "api_views/books.py": "78e2eb77d655573f03b7a4d0bca73dc27383b0c5ec7882a5aa8608caa52828e8",
+    "app.py": null,
+    "config.py": null,
+    "api_views/users.py": null,
+    "models/books_model.py": null,
+    "models/user_model.py": null,
+    "requirements.txt": null,
+    "openapi_specs/openapi3.yml": null,
+    ".pinned_sha": null
+  },
+  "writable_files": [
+    "api_views/books.py"
+  ],
+  "actions": {
+    "stop": null,
+    "assert_stopped": null,
+    "reset": null,
+    "start": null,
+    "readiness": null,
+    "check": null
+  },
+  "seed": {
+    "path": "database/database.db",
+    "sha256": null,
+    "artifact_ref": null,
+    "reset_validation_evidence_ref": null,
+    "expected_users": [
+      "admin",
+      "name1",
+      "name2"
+    ],
+    "expected_books": [
+      "restorelab-bola-book",
+      "restorelab-name2-book"
+    ]
+  },
+  "environment": {
+    "vulnerable": "1",
+    "tokentimetolive": "300"
+  },
+  "acceptance": {
+    "id": "vampi-book-bola-v1",
+    "verifier": "Hamza",
+    "contract_ref": "origin/main:redteam/vampi-contract.md",
+    "checks": {
+      "cross_user_denied": "Fresh name2 token cannot read restorelab-bola-book: HTTP 404 and no owner secret.",
+      "own_book_preserved": "Fresh name1 token reads canonical book: HTTP 200 and exact canonical secret.",
+      "second_owner_preserved": "Verifier may provision a documented second-owner book and must confirm its owner can read it.",
+      "valid_fresh_authentication": "Log in both identities immediately before checks; token/setup failures are UNKNOWN, never PASS.",
+      "seeded_data_preserved": "Confirm expected users, ownership, book records and contents before probing; distinguish verifier-created data.",
+      "service_ready": "Service responds; transport/startup/setup errors are distinct from authorization denials.",
+      "vulnerable_flag_preserved": "GET / reports vulnerable=1; candidate source/config remain within authorized scope."
+    }
+  },
+  "retention_minutes": 60
+}

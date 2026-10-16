@@ -7,8 +7,8 @@
 # /createdb there are 3 users and 3 RANDOM-titled books (not zero). randrange(100) can collide
 # on the UNIQUE book_title and 500 the call, so we retry /createdb until all 3 users exist.
 # The random auto-books can't be deleted (no delete-book endpoint); they are per-run noise and
-# are excluded from the baseline hash. The scenario's ONLY authoritative book is the canonical
-# one we add below. For identical candidate baselines, snapshot AFTER this seed and fork the
+# are excluded from the baseline hash. The two canonical owner books are added below.
+# For identical candidate baselines, snapshot AFTER this seed and fork the
 # snapshot (do not re-run /createdb per candidate).
 #
 # Usage: scripts/seed-vampi.sh [TARGET_URL]
@@ -20,6 +20,8 @@ OWNER_USER="name1"; OWNER_PASS="pass1"       # owns the canonical secret book
 ATTACKER_USER="name2"; ATTACKER_PASS="pass2" # foreign user used by the red-team probe
 BOOK_TITLE="restorelab-bola-book"
 BOOK_SECRET="S3CR3T-name1-canonical"
+SECOND_BOOK_TITLE="restorelab-name2-book"
+SECOND_BOOK_SECRET="S3CR3T-name2-canonical"
 
 jqget() { sed -n "s/.*\"$1\"[^\"]*\"\([^\"]*\)\".*/\1/p"; }
 
@@ -48,4 +50,13 @@ echo "seed book: $add"
 own="$(curl -fsS "$TARGET/books/v1/$BOOK_TITLE" -H "authorization: Bearer $tok" | jqget secret)"
 [ "$own" = "$BOOK_SECRET" ] || { echo "FAIL: canonical book not seeded (got '$own')" >&2; exit 1; }
 
-echo "OK: VAmPI at canonical baseline — 3 users + canonical book '$BOOK_TITLE' (name1); 3 random auto-books ignored"
+# Stable second-owner book for the independent data-preservation gate.
+tok2="$(curl -fsS -X POST "$TARGET/users/v1/login" -H 'content-type: application/json' \
+  -d "{\"username\":\"$ATTACKER_USER\",\"password\":\"$ATTACKER_PASS\"}" | jqget auth_token)"
+[ -n "$tok2" ] || { echo "FAIL: could not log in as $ATTACKER_USER" >&2; exit 1; }
+curl -fsS -X POST "$TARGET/books/v1" -H "authorization: Bearer $tok2" -H 'content-type: application/json' \
+  -d "{\"book_title\":\"$SECOND_BOOK_TITLE\",\"secret\":\"$SECOND_BOOK_SECRET\"}" >/dev/null
+second="$(curl -fsS "$TARGET/books/v1/$SECOND_BOOK_TITLE" -H "authorization: Bearer $tok2" | jqget secret)"
+[ "$second" = "$SECOND_BOOK_SECRET" ] || { echo "FAIL: second owner book not seeded" >&2; exit 1; }
+
+echo "OK: VAmPI at canonical baseline — 3 users + two canonical owner books; 3 random auto-books ignored"

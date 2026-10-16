@@ -1,0 +1,4 @@
+# Python 3.12; versions validated together in agents/.venv.
+crewai==1.15.28
+daytona==0.198.0
+pydantic==2.12.5

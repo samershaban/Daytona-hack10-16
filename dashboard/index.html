@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RestoreLab Run</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="top">
+        <div class="brand">
+          <span class="logo">RestoreLab</span>
+          <span class="scenario">VAmPI · Books BOLA · GET /books/v1/{title} · OWASP API1:2023</span>
+        </div>
+        <div class="run">
+          <span class="label">Run</span>
+          <code id="run-id"></code>
+        </div>
+        <span id="mode" class="pill"></span><span id="status" class="pill"></span>
+        <div class="actions">
+          <button id="approve" type="button">Approve scope</button>
+          <button id="replay" type="button" class="ghost">▶ Replay</button>
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="panel room">
+          <h2>Agent room</h2>
+          <ol id="feed" class="feed"></ol>
+        </section>
+
+        <section class="panel lanes">
+          <h2>Candidates <small id="baseline"></small></h2>
+          <div id="lanes" class="lanes-grid"></div>
+        </section>
+
+        <section class="panel gates">
+          <h2>Gate matrix <small>independent verifier</small></h2>
+          <table id="matrix" class="matrix"></table>
+        </section>
+
+        <section id="winner" class="banner" aria-live="polite"></section>
+      </main>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

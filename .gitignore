@@ -155,5 +155,13 @@ __pycache__/
 *.py[cod]
 .data/
 
+# Local cloud and signing credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials.csv
+.aws/
+
 # surreal sql CLI history
 history.txt

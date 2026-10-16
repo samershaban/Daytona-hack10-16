@@ -2,7 +2,7 @@
 
 **Discover a recovery. Prove it works. Learn before the real disaster.**
 
-> **Status:** In development for Daytona HackSprint NYC (October 2026). This README describes the product direction and intended hackathon MVP; it does not claim that the proposed features or integrations are already implemented.
+> **Status:** The VAmPI integration branch contains the API, dashboard, agent runtime, verifier and deployment template. Offline checks pass where noted below. A live Daytona recovery and managed SurrealDB connection remain unproven.
 
 RestoreLab is an autonomous disaster-recovery experimentation platform. It inspects an authorized application's code, configuration, dependencies, backups, and operational evidence; identifies recovery risks; proposes safe disaster scenarios; and runs **competing recovery investigations in isolated environments**. An independent verifier tests the restored *product*, not merely whether a process restarted or a backup command returned success. Findings become evidence-backed, reusable recovery knowledge, with human approval before consequential changes.
 
@@ -150,9 +150,61 @@ No improvement statistics or production readiness are claimed until actually mea
 - **Next:** additional failure scenarios; verified second-run learning; optional You.com research; automated suggested fixes and GitHub PRs.
 - **Later:** repository/cloud connectors, scheduled continuous readiness checks, read-only production telemetry, deeper AWS isolation, controlled security hardening, and approved deployment of proven changes.
 
-## Local development
+## Final HackSprint VAmPI setup
 
-Setup instructions, environment variable names, commands, repository structure, and screenshots will be added **after the first implementation is committed**. This avoids documenting commands or integrations that do not yet exist. Do not commit secrets, production credentials, customer data, or real backup contents.
+The active target is VAmPI's BOLA at `GET /books/v1/{title}`. The earlier RecordShop fixture remains in the repository as historical work, but is not part of the final demo. Use Node 24 and Python 3.12. Run components in separate terminals:
+
+```bash
+npm ci
+npm ci --prefix dashboard
+npm ci --prefix verifier
+STORE=jsonl npm run start -w @restorelab/api   # API on port 4000; durable demo fallback
+RESTORELAB_API_ORIGIN=http://127.0.0.1:4000 npm run dev --prefix dashboard
+```
+
+The dashboard is at `http://127.0.0.1:5173/?run=RUN_ID`; its Vite `/api` proxy forwards to the API origin. `?mode=replay` displays explicitly labeled simulated sample data. The live view reads `/runs/:id/report` and `/runs/:id/events`, including findings, cited messages, candidates, approvals, verifier results and the backend's selection. The scope button posts a human approval with the operator's entered name. The alternate view is `/arena.html?run=RUN_ID`.
+
+The API defaults to `STORE=memory`; `STORE=jsonl` writes to `.data/api.jsonl`. For managed SurrealDB, set `STORE=surreal` and the `SURREAL_*` variables in a local `.env` or host environment, then diagnose connectivity and authentication independently. `MEMORY_*` configures the distinct Agent Memory service. See [API setup](packages/api/README.md) and [.env.example](.env.example). JSONL success does not establish SurrealDB Cloud success. The API uses `x-role` for workflow roles, but this is not production authentication; restrict access to trusted operators.
+
+### VAmPI baseline and run
+
+Use the pinned source commit and hash checks in [VAmPI contract](redteam/vampi-contract.md). Start the authorized VAmPI instance using [vampi-up.sh](scripts/vampi-up.sh), then run [seed-vampi.sh](scripts/seed-vampi.sh) once before snapshotting. It creates `name1/pass1` and `name2/pass2`, the `restorelab-bola-book` owned by name1 and the `restorelab-name2-book` owned by name2. `/createdb` also creates three random auto-books; freeze the entire database after seeding and clone that same immutable snapshot into each separate candidate sandbox. Never share a writable database across candidates. Keep `vulnerable=1`. The `vulnerable=0` instance on port 5001 is a comparator only.
+
+```bash
+python3.12 -m venv agents/.venv
+agents/.venv/bin/pip install -r agents/requirements.txt
+agents/.venv/bin/python -m agents plan --target agents/targets/vampi.template.json
+```
+
+The template deliberately fails live readiness until the operator supplies an immutable image digest, Daytona snapshot ID, source/seed hashes, reset validation evidence and bounded lifecycle commands. See [agent handoff](agents/targets/VAMPI_HANDOFF.md). After a human approves the API run and Mahmoud posts a real evidence-backed finding, create a run and invoke candidate A and B with [agent CLI](agents/README.md). B cites an A finding and A's baseline evidence. These commands require real Daytona and LLM credentials; planning mode does not make external calls. Both strategies edit only `api_views/books.py` and preserve `vulnerable=1`.
+
+The independent verifier runs against each candidate's authorized URL and publishes measured evidence before its verdict:
+
+```bash
+cd verifier
+npm run verify -- --url http://127.0.0.1:5000 --candidate CANDIDATE_ID --run RUN_ID --api http://127.0.0.1:4000 --no-trace
+```
+
+Set `ALLOWED_TARGETS` to the actual candidate origins. The CLI refuses port 5001. The verifier must access the candidate while its Daytona sandbox is retained. It never manufactures a pass from an agent claim. Once all candidate verdicts exist, the orchestrator calls `POST /runs/RUN_ID/complete` with `x-role: orchestrator`; the backend selects the fastest eligible passing candidate and exposes the final report. Remediation approval, if needed, remains a separate human action. The [demo sequence](demo/demo-script.md) is a narration aid; its replay data is simulated.
+
+### Checks and EC2 update
+
+```bash
+npm run typecheck -w @restorelab/api
+npm run smoke -w @restorelab/api
+STORE=jsonl npm run smoke -w @restorelab/api
+npm run build --prefix dashboard
+npm run typecheck --prefix verifier
+npm run typecheck --prefix tests/acceptance
+agents/.venv/bin/python -m unittest discover -s agents/tests -v
+git diff --check
+```
+
+The CloudFormation file is [backend.yaml](restorelab-aws-iac/infra/aws/backend.yaml). Validate it with `aws cloudformation validate-template` using approved AWS access; validation does not deploy. The versioned [Compose setup](deploy/compose.yml) builds the API and dashboard separately; its Nginx server forwards same-origin `/api` to the private API container and exposes the dashboard only on host loopback port 8080. Put a separately configured HTTPS reverse proxy in front of that port before public access. It does not expose port 4000 publicly.
+
+For an approved EC2 update: record the current container/image and commit; make a restricted backup of the existing environment and JSONL file; fetch and check out the exact reviewed integration SHA into a new release directory; run `npm ci`, `npm ci --prefix dashboard`, the API typecheck, both API smoke stores and the dashboard build there. On the host, point `RESTORELAB_ENV_FILE` at the **existing** environment file and set `RESTORELAB_DATA_DIR=/opt/restorelab/data`, then run `docker compose -f deploy/compose.yml config --quiet` and `docker compose -f deploy/compose.yml build`. Compose mounts that directory at `/data`, preserving the existing `JSONL_PATH=/data/api.jsonl`; do not rewrite the environment file. Stop the old JSONL writer before starting the new one; never let both containers write the same JSONL file. Start with `docker compose -f deploy/compose.yml up -d`, check `http://127.0.0.1:8080/api/health` and a real report, then switch the HTTPS proxy to loopback port 8080. Keep the prior image/commit and data backup for rollback. No part of this branch integration changes the running host. See [AWS handoff](restorelab-aws-iac/README.md).
+
+Live end-to-end proof still requires a populated VAmPI manifest and snapshot, actual Daytona sandboxes, model credentials, a reachable verifier candidate, human scope approval, and an independent SurrealDB Cloud connection test. Do not commit secrets, private SSH keys or seed database files.
 
 ## References
 

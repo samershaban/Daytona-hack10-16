@@ -16,7 +16,9 @@ const BOOK_TITLE = "restorelab-bola-book";
 const BOOK_SECRET = "S3CR3T-name1-canonical";
 
 function assertScope() {
-  if (!ALLOWED.some((a) => TARGET.startsWith(a.trim()))) {
+  const target = new URL(TARGET);
+  if (target.username || target.password || target.pathname !== "/" || target.search || target.hash ||
+      !ALLOWED.some((a) => target.origin === new URL(a.trim()).origin)) {
     console.error(`refusing: ${TARGET} is not in ALLOWED_TARGETS. This probe runs only against owned VAmPI instances.`);
     process.exit(2);
   }
@@ -42,9 +44,9 @@ async function main() {
   const ownerTok = await login(OWNER);
   const attackerTok = await login(ATTACKER);
 
-  // Self-heal: if the canonical book isn't seeded, plant it (keeps the probe runnable standalone).
+  // Require the canonical seed; never mutate a measured baseline during reproduction.
   const ownRead = await call("GET", `/books/v1/${BOOK_TITLE}`, undefined, ownerTok);
-  if (ownRead.status === 404) await call("POST", "/books/v1", { book_title: BOOK_TITLE, secret: BOOK_SECRET }, ownerTok);
+  if (ownRead.status !== 200 || ownRead.body?.secret !== BOOK_SECRET) throw new Error("canonical VAmPI seed missing or changed; run scripts/seed-vampi.sh before snapshotting");
   const own = await call("GET", `/books/v1/${BOOK_TITLE}`, undefined, ownerTok);
 
   // Attack: the foreign user reads the owner's book by title.
@@ -56,6 +58,7 @@ async function main() {
     title: "Broken Object Level Authorization: cross-user book-secret read (VAmPI)",
     classification: { owasp: "API1:2023", wstg: "WSTG-ATHZ-04", asvs: "ASVS 5.0 V8.2.2" },
     targetScope: TARGET,
+    findingScope: "GET /books/v1/{title}",
     target: "VAmPI @ f16052dce83f05847133ec98f01c5193a41de7d8",
     operation: `GET /books/v1/${BOOK_TITLE}`,
     reproduced,

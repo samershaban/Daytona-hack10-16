@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RestoreLab Arena</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="top">
+        <div class="brand">
+          <span class="logo">RestoreLab</span>
+          <span class="scenario">Recovery Tournament · VAmPI Books BOLA · judged by the independent verifier</span>
+        </div>
+        <div class="run">
+          <span class="label">Bout</span>
+          <code id="run-id"></code>
+        </div>
+        <span id="mode" class="pill"></span><span id="status" class="pill"></span>
+        <div class="actions">
+          <button id="approve" type="button">Approve scope</button>
+          <button id="replay" type="button" class="ghost">▶ Replay the bout</button>
+        </div>
+      </header>
+
+      <main class="arena">
+        <section class="stage">
+          <div class="fighter blue" id="fighter-candidate-a"></div>
+          <div class="vs"><span>VS</span><small id="judge">judge: independent verifier</small></div>
+          <div class="fighter red" id="fighter-candidate-b"></div>
+        </section>
+
+        <section id="decision" class="decision" aria-live="polite"></section>
+
+        <section class="bottom">
+          <div class="panel corner">
+            <h2>Corner chatter</h2>
+            <ol id="feed" class="feed"></ol>
+          </div>
+          <div class="panel card">
+            <h2>Judge's scorecard <small>7 rounds · one point per gate</small></h2>
+            <table id="scorecard" class="scorecard"></table>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="./arena.ts"></script>
+  </body>
+</html>

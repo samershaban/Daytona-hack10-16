@@ -5,11 +5,11 @@
 // Env:
 //   API_URL        e.g. http://localhost:4000  (enables posting)
 //   RUN_ID         existing run in `investigating` state (scope already approved)
-//   BOOTSTRAP=1    create a run + approve scope locally first (dev/demo only; uses honor-system roles)
 //   REDTEAM_AUTHOR default "redteam"
 export interface ProbeFinding {
   category: "OWASP-API1-2023" | "OTHER";
   targetScope: string;
+  findingScope?: string;
   operation: string;
   reproduced: boolean;
   evidence: unknown; // raw request/response detail; secrets get redacted server-side
@@ -36,12 +36,10 @@ export async function postFinding(f: ProbeFinding, meta: { baseFixtureId: string
   if (!f.reproduced) { console.error("not posting: finding not reproduced"); return null; }
 
   let runId = process.env.RUN_ID;
-  if (process.env.BOOTSTRAP === "1") {
-    const run = await api("POST", "/runs", "orchestrator", { targetUrl: f.targetScope, baseFixtureId: meta.baseFixtureId, targetVersion: meta.targetVersion, description: f.title });
-    runId = run.id;
-    await api("POST", `/runs/${runId}/approve`, "human", { kind: "scope", decision: "approved", approver: "redteam-bootstrap", note: "dev bootstrap" });
-  }
-  if (!runId) throw new Error("set RUN_ID (an investigating run) or BOOTSTRAP=1");
+  if (!runId) throw new Error("set RUN_ID for an existing human-approved run");
+  const run = await api("GET", `/runs/${encodeURIComponent(runId)}`, "redteam", undefined);
+  if (run.targetUrl !== f.targetScope || run.targetVersion !== meta.targetVersion || !["investigating", "experimenting"].includes(run.status))
+    throw new Error("run target, version or approved/open status differs from this probe");
 
   // Evidence: the raw proof. Server redacts any credential-looking content (e.g. the leaked secret).
   const ev = await api("POST", `/runs/${runId}/evidence`, "redteam", {
@@ -59,7 +57,7 @@ export async function postFinding(f: ProbeFinding, meta: { baseFixtureId: string
     // no "secret:"/"token=" assignments, no Bearer values). Describe identities by role only.
     observation: `Broken Object Level Authz flaw (OWASP API1-2023 / WSTG-ATHZ-04). A foreign identity read another user's private object via ${f.operation}, receiving HTTP 200 where 404 is required. Evidence attached.`,
     evidenceIds: [ev.id],
-    targetScope: f.targetScope,
+    targetScope: f.findingScope ?? f.targetScope,
   });
 
   console.error(`posted finding ${finding.id} (evidence ${ev.id}) to run ${runId}`);

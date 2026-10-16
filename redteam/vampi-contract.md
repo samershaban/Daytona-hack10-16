@@ -83,7 +83,7 @@ UNIQUE `book_title` and **500 the call**, and there is **no delete-book endpoint
 them. They are per-run noise, excluded from the baseline hash and ignored by the scenario.
 
 `scripts/seed-vampi.sh`: (1) retries `/createdb` until all 3 users exist (past the rare
-collision); (2) logs in as `name1`; (3) creates the canonical book; (4) verifies.
+collision); (2) logs in as `name1` and `name2`; (3) creates one stable book per owner; (4) verifies both.
 
 ```bash
 scripts/seed-vampi.sh http://127.0.0.1:<port>
@@ -94,7 +94,7 @@ then **snapshot** the instance; every candidate **forks the snapshot**, so the r
 are frozen and identical across candidates. Do **not** re-run `/createdb` per candidate (it
 re-rolls the random books). Container-restart-alone and `:latest` are both insufficient.
 
-**Baseline-equality gate** — hashes the KNOWN state (users + canonical book + vuln flag),
+**Baseline-equality gate** — hashes the KNOWN state (users + both canonical books + vuln flag),
 excluding the random auto-books; run against each fork, they must match:
 ```bash
 scripts/vampi-baseline-hash.sh http://127.0.0.1:<port>
@@ -113,6 +113,7 @@ From VAmPI's `init_db_users()` at the pinned commit (passwords are fixed seed va
 
 **Expected-book list after seed:**
 - **Authoritative (the scenario's object):** `restorelab-bola-book`, secret `S3CR3T-name1-canonical`, owner `name1`.
+- **Second-owner preservation object:** `restorelab-name2-book`, secret `S3CR3T-name2-canonical`, owner `name2`.
 - **Ignored noise:** one random `bookTitle<0-99>` per seeded user (name1, name2, admin) from
   `init_db_users()`. Titles are random per `/createdb` but frozen once snapshotted. Record the
   3 actual titles when you build the snapshot (open item below); the verifier must not depend on them.
@@ -122,17 +123,11 @@ Auth: `Authorization: Bearer <auth_token>` from `POST /users/v1/login`.
 ## 7. Cross-user evidence (red-team proof)
 
 ```bash
-# standalone (red-team smoke test): self-creates a run + approves scope
+# standalone read-only reproduction (prints the finding; does not create a run)
 TARGET_URL=http://127.0.0.1:<port> npm run redteam:vampi -w @restorelab/fixture
 
-# post to the live API — smoke test (BOOTSTRAP self-creates the run):
-API_URL=http://54.172.170.158:4000 BOOTSTRAP=1 \
-  TARGET_URL=http://127.0.0.1:<port> REDTEAM_AUTHOR=mahmoud-redteam \
-  npm run redteam:vampi -w @restorelab/fixture
-
-# orchestrated demo: the orchestrator creates the run and a human approves scope,
-# then post into THAT run (no BOOTSTRAP):
-API_URL=http://54.172.170.158:4000 RUN_ID=<run id> \
+# orchestrated demo: the orchestrator creates the run and a human approves scope
+API_URL=http://127.0.0.1:4000 RUN_ID=<run id> \
   TARGET_URL=http://127.0.0.1:<port> REDTEAM_AUTHOR=mahmoud-redteam \
   npm run redteam:vampi -w @restorelab/fixture
 ```
