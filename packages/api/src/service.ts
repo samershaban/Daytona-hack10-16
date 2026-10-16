@@ -2,8 +2,9 @@
 // backend owns is enforced here, so it holds no matter which Store is behind it.
 import { createHash, randomUUID } from "node:crypto";
 import type {
-  AgentMessage, Approval, ApproveBody, CreateEvidenceBody, CreateFindingBody, CreateMessageBody,
-  EventSource, Evidence, Finding, Run, RunEvent, RunStatus,
+  AgentMessage, Approval, ApproveBody, Candidate, CreateCandidateBody, CreateEvidenceBody, CreateFindingBody,
+  CreateMessageBody, CreateVerdictBody, EventSource, Evidence, Finding, Run, RunEvent, RunStatus,
+  UpdateCandidateBody, Verdict,
 } from "@restorelab/contracts";
 import { ApiError, conflict, notFound, unprocessable } from "./errors.ts";
 import { findSecret, redact } from "./secrets.ts";
@@ -11,6 +12,8 @@ import type { NewEvent, Store } from "./store/store.ts";
 
 export const newId = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
 const now = () => new Date().toISOString();
+
+export const MAX_CANDIDATES = 3;
 
 const NEXT: Record<RunStatus, RunStatus[]> = {
   created: ["awaiting_scope_approval"],
@@ -230,6 +233,87 @@ export class Service {
     const cand = await this.store.get("candidate", id);
     if (!cand || cand.runId !== runId) throw notFound("candidate", id);
     return cand;
+  }
+
+  /**
+   * Registers a recovery candidate. It must branch from the run's baseline fixture. A retry with
+   * the same label returns the existing candidate. The first candidate moves the run to experimenting.
+   */
+  createCandidate(runId: string, body: CreateCandidateBody, source: EventSource): Promise<Candidate> {
+    return this.withRunLock(runId, async () => {
+      const run = await this.requireOpen(runId);
+      if (body.baseFixtureId !== run.baseFixtureId)
+        throw unprocessable("baseline_mismatch", `candidate baseFixtureId ${body.baseFixtureId} != run baseline ${run.baseFixtureId}; candidates must start from an equivalent fixture`);
+      const existing = await this.store.list("candidate", runId);
+      const same = body.label ? existing.find((c) => c.label === body.label) : undefined;
+      if (same) {
+        if (same.sandboxId !== body.sandboxId) throw conflict("label_taken", `candidate ${body.label} already exists with sandbox ${same.sandboxId}`);
+        return same;
+      }
+      if (existing.length >= MAX_CANDIDATES) throw conflict("candidate_limit", `run ${runId} already has ${MAX_CANDIDATES} candidates`);
+      const t = now();
+      const cand = await this.store.insert("candidate", { id: newId("cand"), runId, ...body, status: "planned", createdAt: t, updatedAt: t });
+      await this.event({ runId, type: "candidate.created", source, candidateId: cand.id, payload: cand });
+      await this.advance(runId, "investigating", "experimenting", source);
+      return cand;
+    });
+  }
+
+  /** Progress updates from the agent. The patch and target are frozen once a verdict exists. */
+  updateCandidate(runId: string, id: string, body: UpdateCandidateBody, source: EventSource): Promise<Candidate> {
+    return this.withRunLock(runId, async () => {
+      await this.requireOpen(runId);
+      await this.getCandidateIn(runId, id);
+      if ((body.patchRef !== undefined || body.targetUrl !== undefined) && (await this.store.get("verdict", id)))
+        throw conflict("verdict_recorded", `candidate ${id} already has a verdict; register a new candidate to test a different patch`);
+      const cand = await this.store.update("candidate", id, { ...body, updatedAt: now() });
+      await this.event({ runId, type: "candidate.updated", source, candidateId: id, payload: body });
+      return cand;
+    });
+  }
+
+  async listCandidates(runId: string) {
+    await this.getRun(runId);
+    const verdicts = new Map((await this.store.list("verdict", runId)).map((v) => [v.candidateId, v]));
+    return (await this.store.list("candidate", runId)).map((c) => ({ ...c, verdict: verdicts.get(c.id) }));
+  }
+
+  async getCandidate(runId: string, id: string) {
+    const cand = await this.getCandidateIn(runId, id);
+    return { ...cand, verdict: await this.store.get("verdict", id) };
+  }
+
+  // ---------- verdicts (independent verifier only) ----------
+
+  /**
+   * Stores the verifier's immutable verdict for a candidate. Only x-role: verifier may write. A
+   * `pass` needs every check passed === true, and every check must cite stored evidence. Agent
+   * claims are never consulted. The first verdict moves the run to verifying.
+   */
+  recordVerdict(runId: string, body: CreateVerdictBody, source: EventSource): Promise<Verdict> {
+    return this.withRunLock(runId, async () => {
+      if (source !== "verifier") throw new ApiError(403, "verifier_only", "only the independent verifier (x-role: verifier) may record verdicts");
+      await this.requireOpen(runId);
+      await this.getCandidateIn(runId, body.candidateId);
+      if (await this.store.get("verdict", body.candidateId))
+        throw conflict("verdict_immutable", `candidate ${body.candidateId} already has a verdict`);
+      if (body.decision === "pass") {
+        const notPassed = body.checks.filter((k) => k.passed !== true).map((k) => k.name);
+        if (notPassed.length) throw unprocessable("pass_with_failed_checks", `decision pass refused; checks not passed: ${notPassed.join(", ")}`);
+      }
+      for (const k of body.checks) await this.getEvidence(runId, k.evidenceId).catch(() => {
+        throw unprocessable("unknown_evidence", `check ${k.name} cites evidence ${k.evidenceId}, which is not stored for run ${runId}`);
+      });
+      const verdict = await this.store.insert("verdict", { ...body, runId, createdAt: now() });
+      await this.event({ runId, type: "verdict.recorded", source, candidateId: body.candidateId, payload: verdict });
+      await this.advance(runId, "experimenting", "verifying", source);
+      return verdict;
+    });
+  }
+
+  async listVerdicts(runId: string) {
+    await this.getRun(runId);
+    return this.store.list("verdict", runId);
   }
 }
 
