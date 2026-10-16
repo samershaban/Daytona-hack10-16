@@ -147,6 +147,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
 .data/
 
 # surreal sql CLI history

@@ -1,0 +1,34 @@
+{
+  "name": "@restorelab/evals",
+  "version": "1.0.0",
+  "description": "Arize AX tracing + evals for RestoreLab (Owner 4)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "smoke": "tsx src/smoke.ts"
+  },
+  "dependencies": {
+    "@arizeai/openinference-instrumentation-anthropic": "^0.2.11",
+    "@arizeai/openinference-semantic-conventions": "^2.14.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.223.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-trace-base": "^2.12.0",
+    "@opentelemetry/sdk-trace-node": "^2.12.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
+    "dotenv": "^18.0.8"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": "*"
+  }
+}
