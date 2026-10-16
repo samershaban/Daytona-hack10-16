@@ -43,7 +43,8 @@
       "name2"
     ],
     "expected_books": [
-      "restorelab-bola-book"
+      "restorelab-bola-book",
+      "restorelab-name2-book"
     ]
   },
   "environment": {

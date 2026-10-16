@@ -3,11 +3,8 @@
  *
  * The verifier logs in FRESH each run with these credentials to get new
  * auth_tokens, so an expired token can never be mistaken for a working fix.
- * Passwords and secrets below are MOCK values — clearly labelled — until the
- * real synthetic seed values arrive from Mahmoud.
- *
- * TODO(Mahmoud): replace MOCK_* with the real VAmPI seed usernames, passwords,
- * owned book titles and expected secrets (the values /createdb seeds).
+ * Synthetic identities and books match scripts/seed-vampi.sh. Each candidate
+ * must be forked from a snapshot made after that script completes.
  */
 import type { IdentityName } from "@restorelab/acceptance";
 
@@ -43,18 +40,17 @@ export const VAMPI_CONFIG: VerifierConfig = {
   healthPath: "/",
   missingTitle: "restorelab-nonexistent-title-404-probe",
   identities: {
-    // TODO(Mahmoud): real VAmPI seed creds/books/secrets.
     userA: {
-      username: "MOCK_userA",
-      password: "MOCK_passwordA",
-      bookTitle: "MOCK_bookA",
-      expectedSecret: "MOCK_secretA",
+      username: "name1",
+      password: "pass1",
+      bookTitle: "restorelab-bola-book",
+      expectedSecret: "S3CR3T-name1-canonical",
     },
     userB: {
-      username: "MOCK_userB",
-      password: "MOCK_passwordB",
-      bookTitle: "MOCK_bookB",
-      expectedSecret: "MOCK_secretB",
+      username: "name2",
+      password: "pass2",
+      bookTitle: "restorelab-name2-book",
+      expectedSecret: "S3CR3T-name2-canonical",
     },
   },
 };

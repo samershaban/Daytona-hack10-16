@@ -60,6 +60,12 @@ export type StageEvent = { stage: Stage; at: string; detail: string };
 
 /** Everything the screen needs for one run. Returned by getRunData(). */
 export type RunData = {
+  mode?: "live" | "replay";
+  approved?: boolean;
+  outcome?: "verified" | "no_verified_candidate" | "pending";
+  selectedCandidateId?: string;
+  recommendedCandidateId?: string;
+  events?: { seq: number; type: string; candidateId?: string; createdAt: string; payload: unknown }[];
   runId: string;
   status: RunStatus;
   baseFixtureId: string;

@@ -4,7 +4,7 @@
  */
 import "./style.css";
 import { CHECKS } from "../tests/acceptance/contract.ts";
-import { getRunData } from "./data.ts";
+import { approveScope, getRunData, replayMode } from "./data.ts";
 import type { AgentMessage, Finding, RunData, RunStatus, Stage, Verdict } from "./types.ts";
 
 const STAGES: { stage: Stage; label: string }[] = [
@@ -37,14 +37,29 @@ type View = {
   approved: boolean;
 };
 
-type FeedItem = { kind: "finding"; at: string; finding: Finding } | { kind: "message"; at: string; message: AgentMessage };
+type FeedItem = { kind: "finding"; at: string; finding: Finding } | { kind: "message"; at: string; message: AgentMessage } | { kind: "event"; at: string; event: NonNullable<RunData["events"]>[number] };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const data = await getRunData();
+const data = await getRunData().catch((error: unknown) => {
+  $("app").textContent = `RestoreLab live dashboard: ${String(error)}`;
+  throw error;
+});
+$("mode").textContent = replayMode ? "SAMPLE REPLAY · SIMULATED" : "LIVE API";
+if (!replayMode) {
+  $<HTMLButtonElement>("replay").hidden = true;
+  const lastSeq = data.events?.at(-1)?.seq ?? 0;
+  setInterval(async () => {
+    try {
+      const fresh = await getRunData(data.runId);
+      if ((fresh.events?.at(-1)?.seq ?? 0) !== lastSeq) location.reload();
+    } catch (error) { $("mode").textContent = `LIVE API ERROR: ${String(error)}`; }
+  }, 3000);
+}
 const feedItems: FeedItem[] = [
   ...data.findings.map((f): FeedItem => ({ kind: "finding", at: f.createdAt, finding: f })),
   ...data.messages.map((m): FeedItem => ({ kind: "message", at: m.createdAt, message: m })),
+  ...(data.events ?? []).map((event): FeedItem => ({ kind: "event", at: event.createdAt, event })),
 ].sort((a, b) => a.at.localeCompare(b.at));
 const verdictOf = new Map(data.verdicts.map((v) => [v.candidateId, v]));
 const outcome = rankCandidates(data);
@@ -115,6 +130,10 @@ function build(): void {
 }
 
 function feedItemHtml(item: FeedItem, i: number): string {
+  if (item.kind === "event") {
+    const e = item.event;
+    return `<li class="msg kind-event" data-i="${i}"><div class="meta"><span class="badge">event</span><span class="from">${esc(e.type)}</span><time>${clock(e.createdAt)}</time></div><p class="body">${esc(e.candidateId ?? `sequence ${e.seq}`)}</p></li>`;
+  }
   if (item.kind === "finding") {
     const f = item.finding;
     return `<li class="msg kind-finding" data-i="${i}">
@@ -175,10 +194,10 @@ function fullView(): View {
   return {
     status: data.status,
     feedShown: feedItems.length,
-    stage: Object.fromEntries(data.candidates.map((c) => [c.id, STAGES.length])),
-    cells: new Set(data.candidates.flatMap((c) => CHECKS.map((k) => `${c.id}|${k.name}`))),
+    stage: Object.fromEntries(data.candidates.map((c) => [c.id, data.mode === "live" ? Math.max(0, ...((data.timelines[c.id] ?? []).map((e) => STAGES.findIndex((s) => s.stage === e.stage) + 1))) : STAGES.length])),
+    cells: new Set(data.candidates.flatMap((c) => data.mode === "live" && !verdictOf.has(c.id) ? [] : CHECKS.map((k) => `${c.id}|${k.name}`))),
     winner: true,
-    approved: true,
+    approved: data.approved ?? false,
   };
 }
 
@@ -268,9 +287,16 @@ async function replay(): Promise<void> {
   }
 }
 
-$("replay").addEventListener("click", () => void replay());
-$("approve").addEventListener("click", () => {
+$("replay").addEventListener("click", () => { if (replayMode) void replay(); });
+$("approve").addEventListener("click", async () => {
   if (view.status !== "awaiting_scope_approval") return;
+  if (!replayMode) {
+    const approver = prompt("Your name for the scope approval audit record:")?.trim();
+    if (!approver) return;
+    try { await approveScope(data.runId, approver); location.reload(); }
+    catch (error) { alert(String(error)); }
+    return;
+  }
   const release = releaseGate;
   releaseGate = undefined;
   release?.();
@@ -278,15 +304,18 @@ $("approve").addEventListener("click", () => {
 
 // ?replay starts the replay on load (kiosk / recording).
 const params = new URLSearchParams(location.search);
-if (params.has("replay")) void replay();
+if (replayMode && params.has("replay")) void replay();
 
 // ---- ranking (fastest passing candidate; mirrors the verifier's rule) ----
 
 function rankCandidates(run: RunData): { html: string; loserIds: Set<string> } {
+  if (run.mode === "live" && !["completed", "failed", "unknown"].includes(run.status)) {
+    return { html: `<div class="headline none">${run.recommendedCandidateId ? `Verified recommendation: ${esc(run.recommendedCandidateId)}. Awaiting run completion.` : "Verification pending; no candidate selected."}</div>`, loserIds: new Set() };
+  }
   const passing = run.verdicts
     .filter((v) => v.decision === "pass")
     .sort((a, b) => (a.recoveryMs ?? Infinity) - (b.recoveryMs ?? Infinity));
-  const winner = passing[0];
+  const winner = run.mode === "live" ? passing.find((v) => v.candidateId === run.selectedCandidateId) : passing[0];
   const losers = run.verdicts.filter((v) => v !== winner);
   const loserIds = new Set(losers.filter((v) => v.decision !== "pass").map((v) => v.candidateId));
 

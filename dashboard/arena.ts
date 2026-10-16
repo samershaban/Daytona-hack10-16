@@ -5,7 +5,7 @@
  */
 import "./arena.css";
 import { CHECKS } from "../tests/acceptance/contract.ts";
-import { getRunData } from "./data.ts";
+import { approveScope, getRunData, replayMode } from "./data.ts";
 import type { AgentMessage, Candidate, Finding, RunData, RunStatus, Verdict } from "./types.ts";
 
 const CORNER: Record<string, { corner: string; label: string }> = {
@@ -37,7 +37,19 @@ type FeedItem = { kind: "finding"; at: string; finding: Finding } | { kind: "mes
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const data = await getRunData();
+const data = await getRunData().catch((error: unknown) => {
+  $("app").textContent = `RestoreLab live arena: ${String(error)}`;
+  throw error;
+});
+$("mode").textContent = replayMode ? "SAMPLE REPLAY · SIMULATED" : "LIVE API";
+if (!replayMode) {
+  $<HTMLButtonElement>("replay").hidden = true;
+  const lastSeq = data.events?.at(-1)?.seq ?? 0;
+  setInterval(async () => {
+    try { if (((await getRunData(data.runId)).events?.at(-1)?.seq ?? 0) !== lastSeq) location.reload(); }
+    catch (error) { $("mode").textContent = `LIVE API ERROR: ${String(error)}`; }
+  }, 3000);
+}
 const feedItems: FeedItem[] = [
   ...data.findings.map((f): FeedItem => ({ kind: "finding", at: f.createdAt, finding: f })),
   ...data.messages.map((m): FeedItem => ({ kind: "message", at: m.createdAt, message: m })),
@@ -54,7 +66,10 @@ apply();
 function build(): void {
   $("run-id").textContent = data.runId;
 
-  for (const c of data.candidates) buildFighter(c);
+  for (const [index, c] of data.candidates.slice(0, 2).entries()) {
+    document.querySelectorAll<HTMLElement>(".fighter")[index]!.id = `fighter-${c.id}`;
+    buildFighter(c);
+  }
 
   const head = `<thead><tr><th class="round-col">Round</th>${data.candidates
     .map((c) => {
@@ -149,7 +164,7 @@ function apply(): void {
     el.classList.toggle("revealed", view.cells.has(el.dataset.key!));
   });
 
-  for (const c of data.candidates) {
+  for (const c of data.candidates.slice(0, 2)) {
     const lit = view.decided && outcome.winnerId === c.id;
     const out = view.decided && verdictOf.get(c.id)?.decision === "fail";
     const el = $(`fighter-${c.id}`);
@@ -168,7 +183,7 @@ function fullView(): View {
     feedShown: feedItems.length,
     cells: new Set(data.candidates.flatMap((c) => CHECKS.map((k) => `${c.id}|${k.name}`))),
     decided: true,
-    approved: true,
+    approved: data.approved ?? false,
   };
 }
 
@@ -233,24 +248,33 @@ async function replay(): Promise<void> {
   }
 }
 
-$("replay").addEventListener("click", () => void replay());
-$("approve").addEventListener("click", () => {
+$("replay").addEventListener("click", () => { if (replayMode) void replay(); });
+$("approve").addEventListener("click", async () => {
   if (view.status !== "awaiting_scope_approval") return;
+  if (!replayMode) {
+    const approver = prompt("Your name for the scope approval audit record:")?.trim();
+    if (!approver) return;
+    try { await approveScope(data.runId, approver); location.reload(); }
+    catch (error) { alert(String(error)); }
+    return;
+  }
   const r = releaseGate;
   releaseGate = undefined;
   r?.();
 });
 
 const params = new URLSearchParams(location.search);
-if (params.has("replay")) void replay();
+if (replayMode && params.has("replay")) void replay();
 
 // ---- ranking (fastest passing candidate wins; mirrors the verifier's rule) ----
 
 function rank(run: RunData): { html: string; winnerId?: string; loserIds: Set<string> } {
+  if (run.mode === "live" && !["completed", "failed", "unknown"].includes(run.status))
+    return { html: `<div class="headline none">${run.recommendedCandidateId ? `Verified recommendation: ${esc(run.recommendedCandidateId)}. Awaiting completion.` : "Verification pending; no candidate selected."}</div>`, loserIds: new Set() };
   const passing = run.verdicts
     .filter((v) => v.decision === "pass")
     .sort((a, b) => (a.recoveryMs ?? Infinity) - (b.recoveryMs ?? Infinity));
-  const winner = passing[0];
+  const winner = run.mode === "live" ? passing.find((v) => v.candidateId === run.selectedCandidateId) : passing[0];
   const losers = run.verdicts.filter((v) => v !== winner);
   const loserIds = new Set(losers.filter((v) => v.decision !== "pass").map((v) => v.candidateId));
 

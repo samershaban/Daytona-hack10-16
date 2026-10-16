@@ -1,4 +1,4 @@
-"""Adapter for Samer's actual HTTP contract at origin/feat/api (6178de2).
+"""Adapter for the shared HTTP contract integrated on main.
 
 No verifier/approval writes are exposed to recovery agents. No implicit write retries.
 """
@@ -21,7 +21,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 class RunApi:
-    contract_revision = "6178de2"
+    contract_revision = "12dd417"
 
     def __init__(self, base_url: str, timeout: int = 15):
         parsed = urlsplit(base_url)

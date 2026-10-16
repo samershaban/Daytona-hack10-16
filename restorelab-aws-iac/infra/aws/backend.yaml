@@ -101,10 +101,12 @@ Resources:
             Encrypted: true
             DeleteOnTermination: true
       UserData:
-        Fn::Base64: !Sub |
+        Fn::Base64: |
           #!/bin/bash
           set -euxo pipefail
-          dnf install -y docker git jq
+          # AL2023 ships curl-minimal; permit its replacement if a git dependency
+          # requires full curl, avoiding a curl/curl-minimal transaction conflict.
+          dnf install -y --allowerasing docker git-core jq
           systemctl enable --now docker
           install -d -m 0750 -o ec2-user -g ec2-user /opt/restorelab
           printf 'bootstrap complete\n' > /opt/restorelab/bootstrap.status

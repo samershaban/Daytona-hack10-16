@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { VAMPI_CONFIG } from "./identities.js";
 import { runVerifier } from "./runVerifier.js";
+import { publishResult } from "./publish.js";
 import { assertInScope, OutOfScopeError, ReferenceTargetError } from "./scope.js";
 
 loadEnv({ path: fileURLToPath(new URL("../.env", import.meta.url)), quiet: true });
@@ -19,12 +20,17 @@ const { values } = parseArgs({
     url: { type: "string" },
     candidate: { type: "string", default: "local" },
     run: { type: "string" },
+    api: { type: "string" },
     "no-trace": { type: "boolean", default: false },
   },
 });
 
 if (!values.url) {
   console.error("Usage: npm run verify -- --url <candidate base URL> [--candidate A] [--run <runId>] [--no-trace]");
+  process.exit(64);
+}
+if (values.api && (!values.run || !values.candidate || values.candidate === "local")) {
+  console.error("API publication requires --run and a real --candidate id");
   process.exit(64);
 }
 
@@ -49,6 +55,9 @@ else console.warn("Arize tracing off (--no-trace or ARIZE_* env vars missing).\n
 
 const result = await runVerifier(values.url, VAMPI_CONFIG, { candidateId: values.candidate, runId: values.run });
 if (tracing) await shutdownTracing();
+if (values.api) {
+  await publishResult(values.api, result);
+}
 
 const { verdict, evidence } = result;
 const byId = new Map(evidence.map((e) => [e.evidenceId, e]));
