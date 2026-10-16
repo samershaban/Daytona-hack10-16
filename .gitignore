@@ -153,3 +153,7 @@ vite.config.ts.timestamp-*
 venv/
 __pycache__/
 *.py[cod]
+.data/
+
+# surreal sql CLI history
+history.txt
